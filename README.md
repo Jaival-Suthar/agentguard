@@ -55,3 +55,29 @@ Repository foundation only. No AgentGuard runtime code has been implemented yet.
 Do not provide the agent access to your personal filesystem, SSH keys, browser profiles, cloud credentials, `.env` files, or other sensitive host data.
 
 The initial environment is intended for local experimentation only. Keep local TrueForge bound to localhost unless a deliberate authenticated deployment is configured.
+
+## Current phase — TrueForge Runtime Proof
+
+PR #2 establishes the real execution substrate without implementing AgentGuard verification yet.
+
+It adds:
+
+- connection to a running TrueForge server
+- one SDK-created session and streamed turn
+- raw streamed event capture to JSONL
+- session metadata for later reconnect/session experiments
+
+The normalized event model, execution contract, verifier, chaos engine, recovery analysis, and scoring remain later phases.
+
+```text
+TrueForge Runtime
+      ↓
+Raw SDK Events
+      ↓
+AgentGuard Runtime Probe
+      ├── console stream
+      ├── JSONL evidence
+      └── session metadata
+```
+
+See `docs/trueforge-runtime.md` for the runtime proof procedure.

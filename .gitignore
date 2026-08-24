@@ -11,3 +11,8 @@ coverage/
 .pnpm-store/
 .turbo/
 *.tsbuildinfo
+
+# Local runtime only (never commit upstream TrueForge or generated runs)
+.runtime/
+data/runs/*.jsonl
+data/runs/*.json
