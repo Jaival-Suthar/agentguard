@@ -36,7 +36,7 @@ TrueForge is the execution substrate. AgentGuard is the assurance layer.
 
 ## Current status
 
-Repository foundation only. No AgentGuard runtime code has been implemented yet.
+The repository foundation and TrueForge runtime proof are complete. AgentGuard is now beginning the normalized execution-event phase.
 
 ## Planned phases
 
@@ -56,28 +56,28 @@ Do not provide the agent access to your personal filesystem, SSH keys, browser p
 
 The initial environment is intended for local experimentation only. Keep local TrueForge bound to localhost unless a deliberate authenticated deployment is configured.
 
-## Current phase — TrueForge Runtime Proof
+## Current phase — Normalized Execution Events
 
-PR #2 establishes the real execution substrate without implementing AgentGuard verification yet.
+PR #2 normalizes the raw TrueForge evidence captured by the runtime-proof phase into a small, runtime-independent semantic event model.
 
 It adds:
 
-- connection to a running TrueForge server
-- one SDK-created session and streamed turn
-- raw streamed event capture to JSONL
-- session metadata for later reconnect/session experiments
+- normalized `ExecutionEvent` types
+- a TrueForge-specific adapter
+- raw-event preservation on every normalized event
+- fixture-based tests derived from observed TrueForge events
 
-The normalized event model, execution contract, verifier, chaos engine, recovery analysis, and scoring remain later phases.
+The execution contract, verifier, chaos engine, recovery analysis, and scoring remain later phases.
 
 ```text
-TrueForge Runtime
+TrueForge Raw Events
       ↓
-Raw SDK Events
+TrueForge Adapter
       ↓
-AgentGuard Runtime Probe
-      ├── console stream
-      ├── JSONL evidence
-      └── session metadata
+Normalized ExecutionEvent
+      ├── execution lifecycle
+      ├── model output
+      └── raw evidence preserved
 ```
 
-See `docs/trueforge-runtime.md` for the runtime proof procedure.
+See `docs/execution-events.md` for the normalized event model.
