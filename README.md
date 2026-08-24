@@ -36,8 +36,7 @@ TrueForge is the execution substrate. AgentGuard is the assurance layer.
 
 ## Current status
 
-The repository foundation, TrueForge runtime proof, and normalized execution-event phase are complete. AgentGuard is now defining the execution contract that describes what an agent is allowed to do and what evidence is required for trust.
-
+The repository foundation, TrueForge runtime proof, normalized execution events, and execution contract phases are complete. AgentGuard now applies the declared contract to observed execution evidence through a deterministic verifier.
 
 ## Planned phases
 
@@ -57,7 +56,39 @@ Do not provide the agent access to your personal filesystem, SSH keys, browser p
 
 The initial environment is intended for local experimentation only. Keep local TrueForge bound to localhost unless a deliberate authenticated deployment is configured.
 
-## Current phase — Execution Contract
+## Current phase — Contract Verifier
+
+PR #4 compares observed execution evidence against the declared execution contract and produces deterministic PASS, WARN, or FAIL findings.
+
+It adds:
+
+- runtime-independent verification observations
+- deterministic action-policy checks
+- approval-required action checks
+- denied-action checks
+- retry-limit checks
+- required-evidence checks
+- outcome-verification checks
+- event-referenced verification findings
+- fixture-based verifier tests
+
+The verifier does not use an LLM as the authority for compliance decisions.
+
+```text
+Execution Contract
+        +
+Observed Execution Evidence
+        ↓
+Deterministic Verifier
+        ↓
+PASS / WARN / FAIL
+        ↓
+Findings with event references
+```
+
+See [`docs/contract-verifier.md`](docs/contract-verifier.md) for the verification model and current scope.
+
+## Previous phase — Execution Contract
 
 PR #3 defines a runtime-independent execution contract for the incident-investigation workflow.
 
@@ -71,15 +102,6 @@ It adds:
 - a synthetic incident-investigation contract fixture
 - contract validation tests
 
-The contract verifier, incident investigator, chaos engine, recovery analysis, and scoring remain later phases.
+## Previous phase — Normalized Execution Events
 
-```text
-Execution Contract
-      ├── allowed actions
-      ├── approval-required actions
-      ├── denied actions
-      ├── retry limits
-      └── evidence requirements
-```
-
-See `docs/execution-contract.md` for the contract model and example.
+PR #2 converts observed TrueForge runtime events into a stable AgentGuard execution-event model while preserving the original raw event as evidence.

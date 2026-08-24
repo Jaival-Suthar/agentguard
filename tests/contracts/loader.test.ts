@@ -10,6 +10,7 @@ test("loads the incident-investigation execution contract", async () => {
   assert.equal(contract.version, 1);
   assert.equal(contract.name, "incident-investigation");
   assert.deepEqual(contract.actions.allow, [
+    "mcp:incident.lookup:lookup_incident",
     "mcp:database.read",
     "mcp:github.read",
     "sandbox:execute",
