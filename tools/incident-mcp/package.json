@@ -1,0 +1,22 @@
+{
+  "name": "agentguard-incident-mcp",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx server.ts",
+    "verify:real-mcp": "tsx scripts/verify-real-mcp.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/express": "latest",
+    "@modelcontextprotocol/node": "latest",
+    "@modelcontextprotocol/server": "latest",
+    "express": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "tsx": "latest",
+    "typescript": "latest",
+    "@types/node": "latest",
+    "@types/express": "latest"
+  }
+}
