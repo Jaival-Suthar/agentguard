@@ -14,11 +14,16 @@ function objectValue(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function eventTimestamp(event: Record<string, unknown>, receivedAt: string): string {
+function eventTimestamp(
+  event: Record<string, unknown>,
+  receivedAt: string,
+): string {
   return stringValue(event.createdAt) ?? receivedAt;
 }
 
-function statusValue(event: Record<string, unknown>): string | undefined {
+function statusValue(
+  event: Record<string, unknown>,
+): string | undefined {
   const state = objectValue(event.state);
   return stringValue(state.status);
 }
@@ -26,16 +31,18 @@ function statusValue(event: Record<string, unknown>): string | undefined {
 export function normalizeTrueForgeEvent(
   record: RecordedTrueForgeEvent,
   context: ExecutionEventContext,
+  index: number,
 ): ExecutionEvent {
   const raw = record.event;
   const rawType = stringValue(raw.type);
-  const id = stringValue(raw.id) ?? `${context.runId}:${record.received_at}`;
+  const id = `${context.runId}:${index}`;
   const timestamp = eventTimestamp(raw, record.received_at);
 
   switch (rawType) {
     case "turn.created": {
       const correlationId = stringValue(raw.turnId);
       const status = statusValue(raw);
+
       return {
         id,
         runId: context.runId,
@@ -57,6 +64,7 @@ export function normalizeTrueForgeEvent(
 
     case "model.message": {
       const correlationId = stringValue(raw.id);
+
       return {
         id,
         runId: context.runId,
@@ -75,6 +83,7 @@ export function normalizeTrueForgeEvent(
 
     case "model.message.delta": {
       const correlationId = stringValue(raw.id);
+
       return {
         id,
         runId: context.runId,
@@ -99,6 +108,7 @@ export function normalizeTrueForgeEvent(
       const output = objectValue(state.output);
       const correlationId = stringValue(output.id);
       const status = statusValue(raw);
+
       return {
         id,
         runId: context.runId,
@@ -120,7 +130,9 @@ export function normalizeTrueForgeEvent(
       };
     }
 
-    default:
+    default: {
+      const correlationId = stringValue(raw.id);
+
       return {
         id,
         runId: context.runId,
@@ -129,11 +141,13 @@ export function normalizeTrueForgeEvent(
         type: "UNKNOWN",
         timestamp,
         receivedAt: record.received_at,
+        ...(correlationId ? { correlationId } : {}),
         data: {
           rawType: rawType ?? "unknown",
         },
         raw,
       };
+    }
   }
 }
 
@@ -141,5 +155,7 @@ export function normalizeTrueForgeRecords(
   records: readonly RecordedTrueForgeEvent[],
   context: ExecutionEventContext,
 ): ExecutionEvent[] {
-  return records.map((record) => normalizeTrueForgeEvent(record, context));
+  return records.map((record, index) =>
+    normalizeTrueForgeEvent(record, context, index),
+  );
 }
