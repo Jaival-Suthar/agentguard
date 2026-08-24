@@ -36,7 +36,8 @@ TrueForge is the execution substrate. AgentGuard is the assurance layer.
 
 ## Current status
 
-The repository foundation and TrueForge runtime proof are complete. AgentGuard is now beginning the normalized execution-event phase.
+The repository foundation, TrueForge runtime proof, and normalized execution-event phase are complete. AgentGuard is now defining the execution contract that describes what an agent is allowed to do and what evidence is required for trust.
+
 
 ## Planned phases
 
@@ -56,28 +57,29 @@ Do not provide the agent access to your personal filesystem, SSH keys, browser p
 
 The initial environment is intended for local experimentation only. Keep local TrueForge bound to localhost unless a deliberate authenticated deployment is configured.
 
-## Current phase — Normalized Execution Events
+## Current phase — Execution Contract
 
-PR #2 normalizes the raw TrueForge evidence captured by the runtime-proof phase into a small, runtime-independent semantic event model.
+PR #3 defines a runtime-independent execution contract for the incident-investigation workflow.
 
 It adds:
 
-- normalized `ExecutionEvent` types
-- a TrueForge-specific adapter
-- raw-event preservation on every normalized event
-- fixture-based tests derived from observed TrueForge events
+- a versioned `ExecutionContract` model
+- YAML contract loading and validation
+- allowed, approval-required, and denied action boundaries
+- retry limits
+- required verification and evidence rules
+- a synthetic incident-investigation contract fixture
+- contract validation tests
 
-The execution contract, verifier, chaos engine, recovery analysis, and scoring remain later phases.
+The contract verifier, incident investigator, chaos engine, recovery analysis, and scoring remain later phases.
 
 ```text
-TrueForge Raw Events
-      ↓
-TrueForge Adapter
-      ↓
-Normalized ExecutionEvent
-      ├── execution lifecycle
-      ├── model output
-      └── raw evidence preserved
+Execution Contract
+      ├── allowed actions
+      ├── approval-required actions
+      ├── denied actions
+      ├── retry limits
+      └── evidence requirements
 ```
 
-See `docs/execution-events.md` for the normalized event model.
+See `docs/execution-contract.md` for the contract model and example.

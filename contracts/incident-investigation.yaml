@@ -1,0 +1,31 @@
+version: 1
+name: incident-investigation
+description: >
+  Execution boundaries for the AgentGuard incident-investigation workflow.
+
+actions:
+  allow:
+    - mcp:database.read
+    - mcp:github.read
+    - sandbox:execute
+    - subagent:delegate
+
+  approvalRequired:
+    - mcp:github.write
+    - operation:restart
+    - operation:rollback
+
+  deny:
+    - host:filesystem.read
+    - host:filesystem.write
+    - host:shell
+    - secrets:read
+
+limits:
+  maxRetries: 3
+
+requirements:
+  verificationRequired: true
+  requiredEvidence:
+    - root_cause
+    - verification
