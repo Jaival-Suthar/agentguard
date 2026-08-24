@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { getEnv } from "./env.js";
 
-const baseUrl = getEnv("TRUEFORGE_BASE_URL", "http://localhost:8790").replace(/\/$/, "");
+const baseUrl = getEnv("TRUEFORGE_BASE_URL", "http://localhost:8791").replace(/\/$/, "");
 
 async function check(path: string): Promise<void> {
   const response = await fetch(`${baseUrl}${path}`);

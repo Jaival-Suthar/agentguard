@@ -19,8 +19,8 @@ This PR captures evidence only.
 
 TrueForge documents two development paths:
 
-- Local standalone: `npx @truefoundry/trueforge` using SQLite on localhost.
-- Hosted Docker Compose: upstream TrueForge with server + Postgres + Redis.
+* Local standalone: `npx @truefoundry/trueforge` using SQLite on localhost.
+* Hosted Docker Compose: upstream TrueForge with server + Postgres + Redis.
 
 AgentGuard supports either because the SDK only needs a `TRUEFORGE_BASE_URL`.
 
@@ -28,12 +28,12 @@ AgentGuard supports either because the SDK only needs a `TRUEFORGE_BASE_URL`.
 
 For this hackathon:
 
-- clone upstream TrueForge into `.runtime/trueforge`
-- keep it ignored by Git
-- run the hosted Docker Compose stack locally
-- use synthetic data only
-- never mount personal folders into agent-facing containers unless explicitly required
-- never commit upstream `.env`
+* clone upstream TrueForge into `.runtime/trueforge`
+* keep it ignored by Git
+* run the hosted Docker Compose stack locally
+* use synthetic data only
+* never mount personal folders into agent-facing containers unless explicitly required
+* never commit upstream `.env`
 
 ## Step A — Install SDK dependencies
 
@@ -41,6 +41,7 @@ For this hackathon:
 npm install
 npm install @truefoundry/trueforge-sdk
 npm install -D typescript tsx @types/node
+npm install dotenv
 ```
 
 ## Step B — Configure environment
@@ -53,12 +54,14 @@ Copy-Item .env.example .env
 
 Set:
 
-```text
-TRUEFORGE_BASE_URL=http://localhost:8790
-TRUEFORGE_MODEL_NAME=<exact configured model name>
+```env
+TRUEFORGE_BASE_URL=http://localhost:8791
+TRUEFORGE_MODEL_NAME=<exact configured provider/model name>
 ```
 
-The model name must match the provider/model configured in TrueForge.
+For the hosted Docker setup, `8791` is the host-facing TrueForge port and `8790` is the container port.
+
+The model name must match the fully qualified `provider/model` configured in TrueForge.
 
 ## Step C — Start TrueForge
 
@@ -99,11 +102,11 @@ npm run trueforge:probe
 
 The probe will:
 
-- create one session
-- stream one turn
-- print model deltas live
-- write every raw SDK event into `data/runs/<timestamp>.jsonl`
-- write metadata into `data/runs/<timestamp>.json`
+* create one session
+* stream one turn
+* print model deltas live
+* write every raw SDK event into `data/runs/<timestamp>.jsonl`
+* write metadata into `data/runs/<timestamp>.json`
 
 Do not edit the evidence files.
 
@@ -111,7 +114,9 @@ Do not edit the evidence files.
 
 ```text
 data/runs/
+
   2026-....jsonl
+
   2026-....json
 ```
 
@@ -119,14 +124,14 @@ Those raw files become the source material for PR #3, where we design the normal
 
 ## Acceptance criteria
 
-- [ ] TrueForge reachable
-- [ ] One configured model responds
-- [ ] Session created through SDK
-- [ ] Turn streamed through SDK
-- [ ] `turn.created` observed
-- [ ] model output streamed
-- [ ] `turn.done` observed
-- [ ] JSONL evidence generated
-- [ ] Session id persisted
+* [ ] TrueForge reachable
+* [ ] One configured model responds
+* [ ] Session created through SDK
+* [ ] Turn streamed through SDK
+* [ ] `turn.created` observed
+* [ ] model output streamed
+* [ ] `turn.done` observed
+* [ ] JSONL evidence generated
+* [ ] Session id persisted
 
 MCP, sandbox, approval, subagents, and reconnect are configured and demonstrated incrementally on this same runtime in later commits within the broader runtime branch if needed, but **this first runtime proof must establish the event surface before we model it.**

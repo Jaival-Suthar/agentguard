@@ -1,4 +1,4 @@
-# Docker development boundary
+# Docker Development Boundary
 
 This directory is reserved for the isolated AgentGuard/TrueForge development environment.
 
@@ -6,7 +6,7 @@ The first implementation intentionally does not expose host files or credentials
 
 When TrueForge is added, document every mounted volume, port, environment variable, and network connection here before using it.
 
-## PR #2 runtime notes
+## PR #2 Runtime Notes
 
 The TrueForge runtime may be cloned into `.runtime/trueforge` for local Docker experimentation. That path is ignored by Git.
 

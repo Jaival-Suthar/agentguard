@@ -3,12 +3,18 @@ import { TrueForge } from "@truefoundry/trueforge-sdk";
 import { getEnv, requireEnv } from "./env.js";
 import { RunStore, type RunMetadata } from "./run-store.js";
 
-const baseUrl = getEnv("TRUEFORGE_BASE_URL", "http://localhost:8790");
+const baseUrl = getEnv(
+  "TRUEFORGE_BASE_URL",
+  "http://localhost:8791"
+).replace(/\/+$/, "");
+
 const modelName = requireEnv("TRUEFORGE_MODEL_NAME");
+
 const instructions = getEnv(
   "TRUEFORGE_AGENT_INSTRUCTIONS",
   "You are a concise incident investigation assistant. Explain your reasoning clearly and use connected tools when available."
 );
+
 const prompt = getEnv(
   "TRUEFORGE_PROMPT",
   "In two sentences, introduce yourself and describe what you can do."
@@ -32,6 +38,8 @@ const metadata: RunMetadata = {
   eventCount: 0,
   eventTypes: [],
 };
+
+const eventTypes = new Set<string>();
 
 console.log(`Run ID: ${runId}`);
 console.log(`TrueForge: ${baseUrl}`);
@@ -59,10 +67,9 @@ try {
     input: [{ type: "user.message", content: prompt }],
   });
 
-  const eventTypes = new Set<string>();
-
   for await (const { data: event } of stream.withMetadata()) {
     metadata.eventCount += 1;
+
     const type = typeof event.type === "string" ? event.type : "unknown";
     eventTypes.add(type);
 
@@ -83,22 +90,26 @@ try {
     }
   }
 
+  metadata.finalStatus ??= "done";
+} catch (error) {
+  metadata.finalStatus = "error";
+
+  console.error("");
+  console.error("Runtime proof failed.");
+  console.error(error);
+
+  process.exitCode = 1;
+} finally {
   metadata.eventTypes = [...eventTypes].sort();
   metadata.completedAt = new Date().toISOString();
-  await store.writeMetadata(metadata);
 
+  await store.writeMetadata(metadata);
+}
+
+if (metadata.finalStatus !== "error") {
   console.log("");
   console.log(`Evidence: ${store.jsonlPath}`);
   console.log(`Metadata: ${store.metadataPath}`);
   console.log(`Events captured: ${metadata.eventCount}`);
   console.log(`Types: ${metadata.eventTypes.join(", ")}`);
-} catch (error) {
-  metadata.completedAt = new Date().toISOString();
-  metadata.finalStatus = "error";
-  await store.writeMetadata(metadata);
-
-  console.error("");
-  console.error("Runtime proof failed.");
-  console.error(error);
-  process.exitCode = 1;
 }
