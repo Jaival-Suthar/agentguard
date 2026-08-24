@@ -32,6 +32,25 @@ function eventIdField(
     : {};
 }
 
+function approvedActionEventIds(
+  observations: readonly VerificationObservation[],
+): Set<string> {
+  return new Set(
+    observations
+      .filter(
+        (
+          observation,
+        ): observation is VerificationObservation & {
+          actionEventId: string;
+        } =>
+          observation.kind === "approval" &&
+          observation.approved === true &&
+          typeof observation.actionEventId === "string",
+      )
+      .map((observation) => observation.actionEventId),
+  );
+}
+
 export function verifyObservations(
   contract: ExecutionContract,
   observations: readonly VerificationObservation[],
@@ -40,6 +59,7 @@ export function verifyObservations(
   const allowed = actionSet(contract.actions.allow);
   const approvalRequired = actionSet(contract.actions.approvalRequired);
   const denied = actionSet(contract.actions.deny);
+  const approvedActionEvents = approvedActionEventIds(observations);
 
   for (const observation of observations) {
     if (observation.kind === "action") {
@@ -67,7 +87,12 @@ export function verifyObservations(
       }
 
       if (approvalRequired.has(action)) {
-        if (observation.approved === true) {
+        const approved =
+          observation.approved === true ||
+          (!!observation.eventId &&
+            approvedActionEvents.has(observation.eventId));
+
+        if (approved) {
           findings.push({
             code: "APPROVAL_GRANTED",
             verdict: "PASS",
@@ -111,12 +136,14 @@ export function verifyObservations(
     if (observation.kind === "retry") {
       if (
         typeof observation.retryCount !== "number" ||
-        !Number.isInteger(observation.retryCount)
+        !Number.isInteger(observation.retryCount) ||
+        observation.retryCount < 0
       ) {
         findings.push({
           code: "MALFORMED_OBSERVATION",
           verdict: "WARN",
-          message: "Retry observation is missing an integer retryCount.",
+          message:
+            "Retry observation must contain a non-negative integer retryCount.",
           ...eventIdField(observation),
         });
         continue;
@@ -131,7 +158,7 @@ export function verifyObservations(
         });
       } else {
         findings.push({
-          code: "ACTION_ALLOWED",
+          code: "RETRY_WITHIN_LIMIT",
           verdict: "PASS",
           message: `Observed retry count ${observation.retryCount} is within the contract limit of ${contract.limits.maxRetries}.`,
           ...eventIdField(observation),
@@ -155,7 +182,7 @@ export function verifyObservations(
         });
       } else {
         findings.push({
-          code: "ACTION_ALLOWED",
+          code: "REQUIRED_EVIDENCE_PRESENT",
           verdict: "PASS",
           message: "All required evidence was observed.",
           ...eventIdField(observation),
@@ -178,7 +205,7 @@ export function verifyObservations(
         });
       } else {
         findings.push({
-          code: "ACTION_ALLOWED",
+          code: "OUTCOME_VERIFIED",
           verdict: "PASS",
           message: "Outcome verification requirement was satisfied.",
           ...eventIdField(observation),
@@ -200,7 +227,17 @@ export function verifyObservations(
             : "Approval was denied or not granted.",
         ...eventIdField(observation),
       });
+      continue;
     }
+
+    const unknownKind = (observation as { kind: unknown }).kind;
+
+    findings.push({
+      code: "MALFORMED_OBSERVATION",
+      verdict: "WARN",
+      message: `Unsupported observation kind "${String(unknownKind)}".`,
+      ...eventIdField(observation),
+    });
   }
 
   const passed = findings.filter(

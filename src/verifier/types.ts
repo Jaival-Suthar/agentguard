@@ -21,6 +21,7 @@ export interface VerificationObservation {
   evidence?: string[];
   outcomeVerified?: boolean;
   eventId?: string;
+  actionEventId?: string;
   timestamp?: string;
   data?: Record<string, unknown>;
 }
@@ -28,13 +29,15 @@ export interface VerificationObservation {
 export interface VerificationFinding {
   code:
     | "ACTION_ALLOWED"
-    | "ACTION_APPROVAL_REQUIRED"
     | "ACTION_DENIED"
     | "APPROVAL_MISSING"
     | "APPROVAL_GRANTED"
     | "RETRY_LIMIT_EXCEEDED"
+    | "RETRY_WITHIN_LIMIT"
     | "REQUIRED_EVIDENCE_MISSING"
+    | "REQUIRED_EVIDENCE_PRESENT"
     | "OUTCOME_UNVERIFIED"
+    | "OUTCOME_VERIFIED"
     | "UNKNOWN_ACTION"
     | "MALFORMED_OBSERVATION";
   verdict: VerificationVerdict;

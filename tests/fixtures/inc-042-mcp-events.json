@@ -1,0 +1,227 @@
+{
+  "data": [
+    {
+      "id": "01m0st9yxqdj38rdx5zvw0200s",
+      "type": "turn.created",
+      "input": [
+        {
+          "type": "user.message",
+          "content": "Look up incident INC-042 using the incident lookup tool and summarize the result."
+        }
+      ],
+      "state": {
+        "status": "running"
+      },
+      "turn_id": "01m0st9yvj28aq6dta9b3m4379.t28s06",
+      "thread_id": null,
+      "created_at": "2026-08-24T12:00:45.459Z",
+      "previous_turn_id": null
+    },
+    {
+      "id": "01m0st9yyhjww1aw4hdct1kzsp",
+      "type": "model.message",
+      "usage": {
+        "input_tokens": 1748,
+        "output_tokens": 57,
+        "cache_read_tokens": 0,
+        "input_tokens_breakdown": {
+          "skills": 0,
+          "harness": 1893,
+          "messages": 0,
+          "instructions": 0,
+          "tool_definitions": 0
+        }
+      },
+      "thread_id": "main",
+      "created_at": "2026-08-24T12:00:47.579Z",
+      "tool_calls": [
+        {
+          "id": "call_2997811",
+          "type": "function",
+          "function": {
+            "name": "list_tools",
+            "arguments": "{\"mcp_server\":\"incident.lookup\"}"
+          },
+          "tool_info": {
+            "name": "list_tools",
+            "type": "truefoundry-system"
+          },
+          "provider_specific_fields": {
+            "thought_signature": "EpMCCpACARFNMg8qLuq6mBCtRo72AlNycIQWygQQY8OBYnEB9oywgSlNQ7ydVUH1pXYDnR+CnVhV+iKfc0bI+F12QAMzIhpjxpP9Kih+tAR+dBekXAP3rECWUBypMqR/0ZN+RYR7VlnmSBy1Fss4rm8iTZUWfPMAJxYqe6DFjVEPVQsVlluWx+efpioKHbrcBcmKCUKtpGl6SCCoXK7IsO03CmfuD/DH9v6Lz9h5Q1hAeu6JO5TZkXkgCckESrPlomswXCUll5YEeXQyuJhRPuNmCSxCTAzeYPFNnHTPrMhZg+hUgY6/C0b2OcUL8Qr/0hb3ihyANUCLTy7wPP7IJDHYaZGiPZVQ0aoFxljhv1SqejYsIFE="
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "id": "01m0sta12s3wtcdff1hjq207a8",
+      "type": "mcp.initialize",
+      "thread_id": "main",
+      "created_at": "2026-08-24T12:00:47.705Z",
+      "mcp_servers": [
+        {
+          "id": "incident.lookup",
+          "name": "incident.lookup",
+          "transport_type": "streamable-http"
+        }
+      ]
+    },
+    {
+      "id": "01m0sta13dcypkx9r4ayh3bpgf",
+      "type": "tool.response",
+      "content": "incident.lookup:\n  lookup_incident",
+      "thread_id": "main",
+      "created_at": "2026-08-24T12:00:47.705Z",
+      "tool_call_id": "call_2997811"
+    },
+    {
+      "id": "01m0sta13seqhe7dca086hxy7y",
+      "type": "model.message",
+      "usage": {
+        "input_tokens": 1835,
+        "output_tokens": 49,
+        "cache_read_tokens": 0,
+        "input_tokens_breakdown": {
+          "skills": 0,
+          "harness": 1893,
+          "messages": 0,
+          "instructions": 0,
+          "tool_definitions": 0
+        }
+      },
+      "thread_id": "main",
+      "created_at": "2026-08-24T12:00:49.436Z",
+      "tool_calls": [
+        {
+          "id": "call_5525065",
+          "type": "function",
+          "function": {
+            "name": "get_tool_info",
+            "arguments": "{\"tool_name\":\"lookup_incident\",\"mcp_server\":\"incident.lookup\"}"
+          },
+          "tool_info": {
+            "name": "get_tool_info",
+            "type": "truefoundry-system"
+          },
+          "provider_specific_fields": {
+            "thought_signature": "ErgBCrUBARFNMg/Jw+w0nyMPTij/Q2EeC9y77WQsK7WOIIBJ1ID4PSAmqgo5j1FObMHc/AqaoLq3+44seH6dXDzwyfrHvz/Oxp2ep44NjBRfHjxiSySEKk1LcnQvRhU2omdJ3LO4pU+d6E1URhtcn2KGaRZGIqzBQSxfj2Ua+/6Bhp31MwebC633tILdkdoIWywNZSNjHZ6Ig/+6x1jiEzvUFmFZDgnr32baKmzCWp6glZTInUPEImOeFQ=="
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "id": "01m0sta2saz2tnqyjmwartgatq",
+      "type": "tool.response",
+      "content": "{\"description\":\"Read-only lookup of synthetic incident information for AgentGuard testing.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"incident_id\":{\"type\":\"string\",\"description\":\"Synthetic incident ID\"}},\"required\":[\"incident_id\"],\"$schema\":\"https://json-schema.org/draft/2020-12/schema\"},\"outputSchema\":null}",
+      "thread_id": "main",
+      "created_at": "2026-08-24T12:00:49.45Z",
+      "tool_call_id": "call_5525065"
+    },
+    {
+      "id": "01m0sta2ssft3tvj9mxfc6javb",
+      "type": "model.message",
+      "usage": {
+        "input_tokens": 1986,
+        "output_tokens": 69,
+        "cache_read_tokens": 0,
+        "input_tokens_breakdown": {
+          "skills": 0,
+          "harness": 1893,
+          "messages": 93,
+          "instructions": 0,
+          "tool_definitions": 0
+        }
+      },
+      "thread_id": "main",
+      "created_at": "2026-08-24T12:00:51.12Z",
+      "tool_calls": [
+        {
+          "id": "call_6794740",
+          "type": "function",
+          "function": {
+            "name": "call_tool",
+            "arguments": "{\"input\":{\"incident_id\":\"INC-042\"},\"mcp_server\":\"incident.lookup\",\"tool_name\":\"lookup_incident\"}"
+          },
+          "tool_info": {
+            "name": "call_tool",
+            "type": "truefoundry-system"
+          },
+          "provider_specific_fields": {
+            "thought_signature": "EskBCsYBARFNMg+SDWs/8djJfKy0n9pylgw0VVE2vMhE/zpeD+1XSUEvox92VHtbA4W14MRQrhli8XEnUyBoRu+/scBGiLhkwgWGagRMPy31YDyyD9nNK7LOm4zDHrGv3vs1aU2iqALQwFKot2OltFZI3mXHdwkAc01ZYgGoDPwGpJyjoFr1RCdNx1w0L8KEL30cK2v8EOEScoOmFrOClfO6p3T0wt0jYp7L5gM+DA5f+pCt3nHgGmEd/yoNyGBIidAIG7MJJ8H/TkzT"
+          }
+        }
+      ],
+      "finish_reason": "tool_calls"
+    },
+    {
+      "id": "01m0sta4en9tj3xjyz67prva0b",
+      "type": "tool.response",
+      "content": "{\n  \"found\": true,\n  \"incident_id\": \"INC-042\",\n  \"service\": \"analytics\",\n  \"severity\": \"high\",\n  \"status\": \"investigating\",\n  \"suspected_component\": \"nightly-worker\"\n}",
+      "thread_id": "main",
+      "created_at": "2026-08-24T12:00:51.157Z",
+      "tool_call_id": "call_6794740"
+    },
+    {
+      "id": "01m0sta4f1rw3f8940zp5x8bvj",
+      "type": "model.message",
+      "usage": {
+        "input_tokens": 2139,
+        "output_tokens": 74,
+        "cache_read_tokens": 0,
+        "input_tokens_breakdown": {
+          "skills": 0,
+          "harness": 1893,
+          "messages": 246,
+          "instructions": 0,
+          "tool_definitions": 0
+        }
+      },
+      "content": "Here is the summary for incident **INC-042**:\n\n* **Incident ID:** INC-042\n* **Service:** Analytics (`analytics`)\n* **Severity:** High\n* **Status:** Investigating\n* **Suspected Component:** Nightly Worker (`nightly-worker`)",
+      "thread_id": "main",
+      "created_at": "2026-08-24T12:00:53.012Z",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "01m0sta6a7j96g8pzwy2yzs3s8",
+      "type": "turn.done",
+      "state": {
+        "output": {
+          "id": "01m0sta4f1rw3f8940zp5x8bvj",
+          "type": "model.message",
+          "usage": {
+            "input_tokens": 2139,
+            "output_tokens": 74,
+            "cache_read_tokens": 0,
+            "input_tokens_breakdown": {
+              "skills": 0,
+              "harness": 1893,
+              "messages": 246,
+              "instructions": 0,
+              "tool_definitions": 0
+            }
+          },
+          "content": "Here is the summary for incident **INC-042**:\n\n* **Incident ID:** INC-042\n* **Service:** Analytics (`analytics`)\n* **Severity:** High\n* **Status:** Investigating\n* **Suspected Component:** Nightly Worker (`nightly-worker`)",
+          "thread_id": "main",
+          "created_at": "2026-08-24T12:00:53.012Z",
+          "finish_reason": "stop"
+        },
+        "status": "done",
+        "metrics": {
+          "total_tokens": 7957,
+          "total_input_tokens": 7708,
+          "total_output_tokens": 249,
+          "total_reasoning_tokens": 88,
+          "total_cache_read_tokens": 0
+        },
+        "completed_at": "2026-08-24T12:00:53.063Z",
+        "required_actions": []
+      },
+      "thread_id": null,
+      "created_at": "2026-08-24T12:00:53.063Z"
+    }
+  ],
+  "pagination": {
+    "limit": 100
+  }
+}

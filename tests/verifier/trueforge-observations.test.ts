@@ -5,7 +5,7 @@ import { loadTrueForgeObservations } from "../../src/verifier/trueforge-observat
 
 test("extracts the real MCP action from TrueForge evidence", async () => {
   const observations = await loadTrueForgeObservations(
-    "data/runs/inc-042-mcp-events.json",
+    "tests/fixtures/inc-042-mcp-events.json",
   );
 
   assert.equal(observations.length, 1);

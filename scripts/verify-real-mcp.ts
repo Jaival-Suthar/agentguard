@@ -1,4 +1,5 @@
 declare const process: {
+  argv: string[];
   exitCode?: number;
 };
 
@@ -6,13 +7,14 @@ import { loadExecutionContract } from "../src/contract/loader.js";
 import { loadTrueForgeObservations } from "../src/verifier/trueforge-observations.js";
 import { verifyObservations } from "../src/verifier/verify.js";
 
+const evidencePath =
+  process.argv[2] ?? "tests/fixtures/inc-042-mcp-events.json";
+
 const contract = await loadExecutionContract(
   "contracts/incident-investigation.yaml",
 );
 
-const observations = await loadTrueForgeObservations(
-  "data/runs/inc-042-mcp-events.json",
-);
+const observations = await loadTrueForgeObservations(evidencePath);
 
 const report = verifyObservations(contract, observations);
 
@@ -20,7 +22,7 @@ console.log("");
 console.log("AgentGuard Verification");
 console.log("=======================");
 console.log(`Contract: ${contract.name}`);
-console.log(`Evidence: data/runs/inc-042-mcp-events.json`);
+console.log(`Evidence: ${evidencePath}`);
 console.log("");
 console.log(`Observed MCP actions: ${observations.length}`);
 
