@@ -5,6 +5,7 @@ description: >
 
 actions:
   allow:
+    - mcp:incident.lookup:lookup_incident
     - mcp:database.read
     - mcp:github.read
     - sandbox:execute
