@@ -1,6 +1,6 @@
 # Architecture
 
-## Initial architecture
+## Hackathon architecture
 
 ```text
                     TRUEFORGE
