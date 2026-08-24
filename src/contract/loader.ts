@@ -15,7 +15,7 @@ function stringArray(value: unknown, field: string): string[] {
       (item) => typeof item === "string" && item.trim().length > 0,
     )
   ) {
-    throw new Error(`${field} must be a non-empty array of strings`);
+    throw new Error(`${field} must be an array of non-empty strings`);
   }
 
   const items = value.map((item) => item.trim());
