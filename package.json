@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "trueforge:health": "tsx src/trueforge/health.ts",
     "trueforge:probe": "tsx src/trueforge/probe.ts",
-    "verify:real-mcp": "tsx scripts/verify-real-mcp.ts"
+    "verify:real-mcp": "tsx scripts/verify-real-mcp.ts",
+    "investigate:incident": "tsx src/investigator/investigate.ts"
   },
   "engines": {
     "node": ">=22.14.0"
