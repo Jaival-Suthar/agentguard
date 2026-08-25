@@ -68,3 +68,46 @@ test("extracts the live delta-shaped MCP action from TrueForge evidence", () => 
   );
   assert.equal(observations[0]?.eventId, "message-1");
 });
+
+test("does not merge an unindexed continuation into another tool call by position", () => {
+  const observations = normalizeTrueForgeObservations([
+    {
+      type: "model.message.delta",
+      id: "message-multi",
+      toolCalls: [
+        {
+          id: "call-a",
+          index: 0,
+          type: "function",
+          function: {
+            name: "call_tool",
+            arguments: "",
+          },
+        },
+        {
+          id: "call-b",
+          index: 1,
+          type: "function",
+          function: {
+            name: "call_tool",
+            arguments: "",
+          },
+        },
+      ],
+    },
+    {
+      type: "model.message.delta",
+      id: "message-multi",
+      toolCalls: [
+        {
+          function: {
+            arguments:
+              '{"input":{"incident_id":"INC-042"},"mcp_server":"incident.lookup","tool_name":"lookup_incident"}',
+          },
+        },
+      ],
+    },
+  ]);
+
+  assert.deepEqual(observations, []);
+});

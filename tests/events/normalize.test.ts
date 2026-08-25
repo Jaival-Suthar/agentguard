@@ -323,3 +323,66 @@ test("does not falsely classify malformed tool payloads", () => {
     "UNKNOWN",
   ]);
 });
+
+test("does not attach a shifted unindexed continuation to another tool call", () => {
+  const events = normalizeTrueForgeRecords(
+    [
+      {
+        received_at: "2026-08-25T10:10:00.000Z",
+        event: {
+          type: "model.message.delta",
+          id: "message-multi",
+          toolCalls: [
+            {
+              id: "call-a",
+              index: 0,
+              type: "function",
+              function: {
+                name: "call_tool",
+                arguments: "",
+              },
+            },
+            {
+              id: "call-b",
+              index: 1,
+              type: "function",
+              function: {
+                name: "call_tool",
+                arguments: "",
+              },
+            },
+          ],
+        },
+      },
+      {
+        received_at: "2026-08-25T10:10:00.001Z",
+        event: {
+          type: "model.message.delta",
+          id: "message-multi",
+          toolCalls: [
+            {
+              function: {
+                arguments:
+                  '{"input":{"incident_id":"INC-042"},"mcp_server":"incident.lookup","tool_name":"lookup_incident"}',
+              },
+            },
+          ],
+        },
+      },
+    ],
+    {
+      runId: "correlation-test",
+      sessionId: "session-test",
+    },
+  );
+
+  const continuation = events[1];
+
+  assert.equal(continuation?.type, "TOOL_CALL");
+
+  const data = continuation?.data as
+    | { toolCalls?: Array<Record<string, unknown>> }
+    | undefined;
+
+  assert.equal(data?.toolCalls?.[0]?.toolCallId, undefined);
+});

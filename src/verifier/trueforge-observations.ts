@@ -68,17 +68,31 @@ function toolCallEntries(event: RawTrueForgeEvent): RawToolCall[] {
   return [];
 }
 
-function toolCallKey(
+function toolCallKeys(
   event: RawTrueForgeEvent,
   toolCall: RawToolCall,
   index: number,
-): string {
+): string[] {
   const eventId = stringValue(event.id) ?? "unknown";
   const toolCallId = stringValue(toolCall.id);
-  const toolCallIndex =
-    typeof toolCall.index === "number" ? toolCall.index : index;
+  const providerIndex =
+    typeof toolCall.index === "number" ? toolCall.index : undefined;
 
-  return `${eventId}:${toolCallIndex ?? toolCallId}`;
+  const keys: string[] = [];
+
+  if (toolCallId) {
+    keys.push(`${eventId}:id:${toolCallId}`);
+  }
+
+  if (providerIndex !== undefined) {
+    keys.push(`${eventId}:index:${providerIndex}`);
+  }
+
+  if (keys.length === 0) {
+    keys.push(`${eventId}:position:${index}`);
+  }
+
+  return keys;
 }
 
 function extractEvents(payload: unknown): RawTrueForgeEvent[] {
@@ -109,6 +123,7 @@ export function normalizeTrueForgeObservations(
     string,
     {
       eventId?: string;
+      toolCallId?: string;
       functionName?: string;
       mcpServer?: string;
       toolName?: string;
@@ -127,8 +142,35 @@ export function normalizeTrueForgeObservations(
     const entries = toolCallEntries(event);
 
     for (const [index, rawToolCall] of entries.entries()) {
-      const key = toolCallKey(event, rawToolCall, index);
-      const state = pendingToolCalls.get(key) ?? {};
+      const keys = toolCallKeys(event, rawToolCall, index);
+      const incomingToolCallId = stringValue(rawToolCall.id);
+
+      let state:
+        | {
+            eventId?: string;
+            toolCallId?: string;
+            functionName?: string;
+            mcpServer?: string;
+            toolName?: string;
+            emitted?: boolean;
+          }
+        | undefined;
+
+      for (const key of keys) {
+        const candidate = pendingToolCalls.get(key);
+
+        if (
+          candidate &&
+          (!incomingToolCallId ||
+            !candidate.toolCallId ||
+            candidate.toolCallId === incomingToolCallId)
+        ) {
+          state = candidate;
+          break;
+        }
+      }
+
+      state ??= {};
       const functionName = stringValue(rawToolCall.function?.name);
       const argumentsValue = parseToolArguments(
         rawToolCall.function?.arguments,
@@ -138,6 +180,9 @@ export function normalizeTrueForgeObservations(
         state.functionName = functionName;
       }
 
+      if (incomingToolCallId) {
+        state.toolCallId = incomingToolCallId;
+      }
       const mcpServer = stringValue(argumentsValue?.mcp_server);
       const toolName = stringValue(argumentsValue?.tool_name);
 
@@ -155,7 +200,9 @@ export function normalizeTrueForgeObservations(
         state.eventId = eventId;
       }
 
-      pendingToolCalls.set(key, state);
+      for (const key of keys) {
+        pendingToolCalls.set(key, state);
+      }
 
       if (
         !state.emitted &&
@@ -170,7 +217,9 @@ export function normalizeTrueForgeObservations(
         });
 
         state.emitted = true;
-        pendingToolCalls.set(key, state);
+        for (const key of keys) {
+          pendingToolCalls.set(key, state);
+        }
       }
     }
   }

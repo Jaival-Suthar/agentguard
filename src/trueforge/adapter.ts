@@ -126,11 +126,33 @@ interface ToolCallState {
   toolCallId?: string;
 }
 
-function toolCallStateKey(
+function toolCallStateKeys(
   event: ExecutionEvent,
-  toolCallIndex: number,
-): string {
-  return `${event.correlationId ?? event.id ?? "unknown"}:${toolCallIndex}`;
+  entry: Record<string, unknown>,
+  index: number,
+): string[] {
+  const correlationId =
+    event.correlationId ?? event.id ?? "unknown";
+
+  const toolCallId = stringValue(entry.toolCallId);
+  const providerIndex =
+    typeof entry.index === "number" ? entry.index : undefined;
+
+  const keys: string[] = [];
+
+  if (toolCallId) {
+    keys.push(`${correlationId}:id:${toolCallId}`);
+  }
+
+  if (providerIndex !== undefined) {
+    keys.push(`${correlationId}:index:${providerIndex}`);
+  }
+
+  if (keys.length === 0) {
+    keys.push(`${correlationId}:position:${index}`);
+  }
+
+  return keys;
 }
 
 function enrichToolCallSummaries(
@@ -154,11 +176,27 @@ function enrichToolCallSummaries(
       return entry;
     }
 
-    const toolCallIndex =
-      typeof entry.index === "number" ? entry.index : index;
-    const key = toolCallStateKey(event, toolCallIndex);
-    const state = states.get(key) ?? {};
+    const keys = toolCallStateKeys(event, entry, index);
     const toolCallId = stringValue(entry.toolCallId);
+
+    let state: ToolCallState | undefined;
+
+    for (const key of keys) {
+      const candidate = states.get(key);
+
+      if (
+        candidate &&
+        (!toolCallId ||
+          !candidate.toolCallId ||
+          candidate.toolCallId === toolCallId)
+      ) {
+        state = candidate;
+        break;
+      }
+    }
+
+    state ??= {};
+
     const enrichedEntry: Record<string, unknown> = { ...entry };
 
     if (toolCallId) {
@@ -168,7 +206,9 @@ function enrichToolCallSummaries(
       changed = true;
     }
 
-    states.set(key, state);
+    for (const key of keys) {
+      states.set(key, state);
+    }
 
     return enrichedEntry;
   });
