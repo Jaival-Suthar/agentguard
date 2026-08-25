@@ -90,6 +90,9 @@ function parseFound(value: unknown): boolean | undefined {
 
 export interface CorrelatedIncidentLookupAttempt {
   toolCallId: string;
+  functionName?: string;
+  mcpServer?: string;
+  toolName?: string;
   incidentId?: string;
   found?: boolean;
   incidentValue?: Record<string, unknown>;
@@ -109,6 +112,7 @@ export function resolveIncidentLookupFromEvents(
     string,
     {
       incidentId?: string;
+      functionName?: string;
       toolName?: string;
       mcpServer?: string;
     }
@@ -134,12 +138,17 @@ export function resolveIncidentLookupFromEvents(
 
         const toolName = stringOrUndefined(entry.toolName);
         const mcpServer = stringOrUndefined(entry.mcpServer);
+        const functionName = stringOrUndefined(entry.functionName);
         const incidentId =
           extractIncidentId(parsedArguments) ??
           extractIncidentId(entry.arguments);
 
         if (toolName) {
           current.toolName = toolName;
+        }
+
+        if (functionName) {
+          current.functionName = functionName;
         }
 
         if (mcpServer) {
@@ -173,6 +182,15 @@ export function resolveIncidentLookupFromEvents(
   const lookupAttempts: CorrelatedIncidentLookupAttempt[] = [];
 
   for (const [toolCallId, call] of lookupCalls.entries()) {
+    const isIncidentLookup =
+      call.mcpServer === "incident.lookup" &&
+      call.toolName === "lookup_incident" &&
+      call.functionName === "call_tool";
+
+    if (!isIncidentLookup) {
+      continue;
+    }
+
     const incidentValue = lookupResults.get(toolCallId);
 
     if (!incidentValue) {
@@ -187,6 +205,9 @@ export function resolveIncidentLookupFromEvents(
 
     lookupAttempts.push({
       toolCallId,
+      ...(call.functionName ? { functionName: call.functionName } : {}),
+      ...(call.mcpServer ? { mcpServer: call.mcpServer } : {}),
+      ...(call.toolName ? { toolName: call.toolName } : {}),
       ...(call.incidentId ? { incidentId: call.incidentId } : {}),
       found,
       incidentValue,

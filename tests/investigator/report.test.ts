@@ -220,3 +220,71 @@ test("ignores tool results with unknown toolCallId values", () => {
   assert.equal(resolution.lookupAttempts.length, 1);
   assert.equal(resolution.lookupAttempts[0]?.toolCallId, "call_123456");
 });
+
+test("does not treat an unrelated tool as incident lookup evidence", () => {
+  const resolution = resolveIncidentLookupFromEvents(
+    [
+      {
+        ...makeToolCallEvent("call_untrusted", "INC-042"),
+        data: {
+          toolCalls: [
+            {
+              toolCallId: "call_untrusted",
+              functionName: "call_tool",
+              mcpServer: "other.server",
+              toolName: "lookup_incident",
+              parsedArguments: {
+                input: {
+                  incident_id: "INC-042",
+                },
+              },
+            },
+          ],
+        },
+      },
+      makeToolResultEvent("call_untrusted", {
+        found: true,
+        incident_id: "INC-042",
+        service: "analytics",
+      }),
+    ],
+    "INC-042",
+  );
+
+  assert.equal(resolution.incidentLookupResult, "UNKNOWN");
+  assert.equal(resolution.incidentValue, undefined);
+  assert.equal(resolution.lookupAttempts.length, 0);
+});
+
+test("does not treat the wrong tool on incident.lookup as incident lookup evidence", () => {
+  const resolution = resolveIncidentLookupFromEvents(
+    [
+      {
+        ...makeToolCallEvent("call_wrong_tool", "INC-042"),
+        data: {
+          toolCalls: [
+            {
+              toolCallId: "call_wrong_tool",
+              functionName: "call_tool",
+              mcpServer: "incident.lookup",
+              toolName: "get_tool_info",
+              parsedArguments: {
+                input: {
+                  incident_id: "INC-042",
+                },
+              },
+            },
+          ],
+        },
+      },
+      makeToolResultEvent("call_wrong_tool", {
+        found: true,
+        incident_id: "INC-042",
+      }),
+    ],
+    "INC-042",
+  );
+
+  assert.equal(resolution.incidentLookupResult, "UNKNOWN");
+  assert.equal(resolution.lookupAttempts.length, 0);
+});
