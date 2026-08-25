@@ -38,6 +38,33 @@ TrueForge is the execution substrate. AgentGuard is the assurance layer.
 
 The repository foundation, TrueForge runtime proof, normalized execution events, and execution contract phases are complete. AgentGuard now applies the declared contract to observed execution evidence through a deterministic verifier.
 
+## Real TrueForge path
+
+The current golden-path branch uses:
+
+- Ollama as the local model provider
+- `ollama/qwen-3-8b` as the tested local model
+- TrueForge as the execution harness
+- the synthetic `incident.lookup` MCP server for incident lookup
+
+Configure the investigator with:
+
+- `TRUEFORGE_BASE_URL=http://localhost:8791`
+- `TRUEFORGE_MODEL_NAME=ollama/qwen-3-8b`
+- `TRUEFORGE_AGENT_NAME=<the TrueForge incident-investigator agent name>`
+
+Run the incident investigation with:
+
+```text
+npm run investigate:incident
+```
+
+The run emits raw TrueForge JSONL evidence under `data/runs/`, including the real MCP interaction. Verify the exact trajectory produced by that run by passing its JSONL file to the deterministic verifier:
+
+```text
+npm run verify:real-mcp -- data\runs\<run-id>.jsonl
+The verifier consumes the exact JSONL trajectory produced by the investigation run.
+
 ## Planned phases
 
 1. Repository foundation and secure local environment
@@ -56,52 +83,85 @@ Do not provide the agent access to your personal filesystem, SSH keys, browser p
 
 The initial environment is intended for local experimentation only. Keep local TrueForge bound to localhost unless a deliberate authenticated deployment is configured.
 
-## Current phase — Contract Verifier
+## Current phase — Real TrueForge Golden Path
 
-PR #4 compares observed execution evidence against the declared execution contract and produces deterministic PASS, WARN, or FAIL findings.
+PR #6 proves the real TrueForge incident-investigation golden path with Ollama, MCP evidence capture, normalized tool-call correlation, evidence-derived reporting, and deterministic verification of the captured runtime trajectory.
 
-It adds:
-
-- runtime-independent verification observations
-- deterministic action-policy checks
-- approval-required action checks
-- denied-action checks
-- retry-limit checks
-- required-evidence checks
-- outcome-verification checks
-- event-referenced verification findings
-- fixture-based verifier tests
-
-The verifier does not use an LLM as the authority for compliance decisions.
+The golden path is:
 
 ```text
-Execution Contract
-        +
-Observed Execution Evidence
+Real TrueForge Runtime
         ↓
-Deterministic Verifier
+Raw JSONL Evidence
+        ↓
+Normalized Execution Events
+        ↓
+Evidence Correlation
+        ↓
+Incident Investigation Report
+        ↓
+Deterministic Contract Verification
         ↓
 PASS / WARN / FAIL
-        ↓
-Findings with event references
-```
 
 See [`docs/contract-verifier.md`](docs/contract-verifier.md) for the verification model and current scope.
 
-## Previous phase — Execution Contract
+### Evidence boundary
 
-PR #3 defines a runtime-independent execution contract for the incident-investigation workflow.
+AgentGuard does not treat the model's final narrative as proof of execution.
+
+The investigation produces raw TrueForge runtime evidence first. AgentGuard then derives normalized execution observations and incident facts from the observed tool-call and tool-result trajectory.
+
+The deterministic verifier evaluates those observations against the declared execution contract.
+
+Model narrative
+      ≠
+Execution evidence
+
+Raw runtime evidence
+      ↓
+Normalized observations
+      ↓
+Deterministic verification
+
+## Previous phase — Incident Investigation
+
+PR #5 adds the first end-to-end incident-investigation workload using TrueForge.
 
 It adds:
+- incident investigator workflow
+- synthetic incident MCP integration
+- evidence capture
+- evidence-derived investigation reporting
+- real tool-call correlation
+- local execution support
 
-- a versioned `ExecutionContract` model
-- YAML contract loading and validation
-- allowed, approval-required, and denied action boundaries
-- retry limits
-- required verification and evidence rules
-- a synthetic incident-investigation contract fixture
-- contract validation tests
+## Current phase — Real TrueForge Golden Path
 
-## Previous phase — Normalized Execution Events
+PR #6 proves the incident-investigation workflow against a real local execution stack.
 
-PR #2 converts observed TrueForge runtime events into a stable AgentGuard execution-event model while preserving the original raw event as evidence.
+It uses:
+- Ollama / qwen3:8b
+- TrueForge
+- the synthetic incident.lookup MCP server
+- real MCP tool execution
+- captured TrueForge JSONL evidence
+- deterministic AgentGuard verification
+
+The golden path has been verified end-to-end:
+
+TrueForge execution
+    ↓
+incident.lookup
+    ↓
+lookup_incident(INC-042)
+    ↓
+real tool response
+    ↓
+raw evidence
+    ↓
+normalized observation
+    ↓
+execution contract
+    ↓
+PASS

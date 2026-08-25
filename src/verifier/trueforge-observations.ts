@@ -4,7 +4,12 @@ import type { VerificationObservation } from "./types.js";
 
 type RawToolCall = {
   id?: unknown;
+  index?: unknown;
   type?: unknown;
+  toolInfo?: {
+    name?: unknown;
+    type?: unknown;
+  };
   function?: {
     name?: unknown;
     arguments?: unknown;
@@ -19,11 +24,13 @@ type RawTrueForgeEvent = {
   id?: unknown;
   type?: unknown;
   tool_calls?: unknown;
+  toolCalls?: unknown;
   tool_call_id?: unknown;
 };
 
 type TrueForgeEventFile = {
   data?: unknown;
+  event?: unknown;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -49,60 +56,171 @@ function parseToolArguments(
   }
 }
 
+function toolCallEntries(event: RawTrueForgeEvent): RawToolCall[] {
+  if (Array.isArray(event.toolCalls)) {
+    return event.toolCalls.filter(isRecord) as RawToolCall[];
+  }
+
+  if (Array.isArray(event.tool_calls)) {
+    return event.tool_calls.filter(isRecord) as RawToolCall[];
+  }
+
+  return [];
+}
+
+function toolCallKeys(
+  event: RawTrueForgeEvent,
+  toolCall: RawToolCall,
+  index: number,
+): string[] {
+  const eventId = stringValue(event.id) ?? "unknown";
+  const toolCallId = stringValue(toolCall.id);
+  const providerIndex =
+    typeof toolCall.index === "number" ? toolCall.index : undefined;
+
+  const keys: string[] = [];
+
+  if (toolCallId) {
+    keys.push(`${eventId}:id:${toolCallId}`);
+  }
+
+  if (providerIndex !== undefined) {
+    keys.push(`${eventId}:index:${providerIndex}`);
+  }
+
+  if (keys.length === 0) {
+    keys.push(`${eventId}:position:${index}`);
+  }
+
+  return keys;
+}
+
 function extractEvents(payload: unknown): RawTrueForgeEvent[] {
   if (!isRecord(payload)) {
-    throw new Error("TrueForge event file must contain an object.");
+    throw new Error("TrueForge event record must contain an object.");
   }
 
   const file = payload as TrueForgeEventFile;
 
-  if (!Array.isArray(file.data)) {
-    throw new Error("TrueForge event file must contain a data array.");
+  if (Array.isArray(file.data)) {
+    return file.data.filter(isRecord) as RawTrueForgeEvent[];
   }
 
-  return file.data.filter(isRecord) as RawTrueForgeEvent[];
+  if (isRecord(file.event)) {
+    return [file.event as RawTrueForgeEvent];
+  }
+
+  throw new Error(
+    "TrueForge event input must contain either a data array or an event object.",
+  );
 }
 
 export function normalizeTrueForgeObservations(
   events: readonly RawTrueForgeEvent[],
 ): VerificationObservation[] {
   const observations: VerificationObservation[] = [];
+  const pendingToolCalls = new Map<
+    string,
+    {
+      eventId?: string;
+      toolCallId?: string;
+      functionName?: string;
+      mcpServer?: string;
+      toolName?: string;
+      emitted?: boolean;
+    }
+  >();
 
   for (const event of events) {
-    if (event.type !== "model.message" || !Array.isArray(event.tool_calls)) {
+    if (
+      event.type !== "model.message" &&
+      event.type !== "model.message.delta"
+    ) {
       continue;
     }
 
-    for (const rawToolCall of event.tool_calls) {
-      if (!isRecord(rawToolCall)) {
-        continue;
+    const entries = toolCallEntries(event);
+
+    for (const [index, rawToolCall] of entries.entries()) {
+      const keys = toolCallKeys(event, rawToolCall, index);
+      const incomingToolCallId = stringValue(rawToolCall.id);
+
+      let state:
+        | {
+            eventId?: string;
+            toolCallId?: string;
+            functionName?: string;
+            mcpServer?: string;
+            toolName?: string;
+            emitted?: boolean;
+          }
+        | undefined;
+
+      for (const key of keys) {
+        const candidate = pendingToolCalls.get(key);
+
+        if (
+          candidate &&
+          (!incomingToolCallId ||
+            !candidate.toolCallId ||
+            candidate.toolCallId === incomingToolCallId)
+        ) {
+          state = candidate;
+          break;
+        }
       }
 
-      const toolCall = rawToolCall as RawToolCall;
-      const functionName = stringValue(toolCall.function?.name);
-
-      if (functionName !== "call_tool") {
-        continue;
-      }
-
+      state ??= {};
+      const functionName = stringValue(rawToolCall.function?.name);
       const argumentsValue = parseToolArguments(
-        toolCall.function?.arguments,
+        rawToolCall.function?.arguments,
       );
 
+      if (functionName) {
+        state.functionName = functionName;
+      }
+
+      if (incomingToolCallId) {
+        state.toolCallId = incomingToolCallId;
+      }
       const mcpServer = stringValue(argumentsValue?.mcp_server);
       const toolName = stringValue(argumentsValue?.tool_name);
 
-      if (!mcpServer || !toolName) {
-        continue;
+      if (mcpServer) {
+        state.mcpServer = mcpServer;
+      }
+
+      if (toolName) {
+        state.toolName = toolName;
       }
 
       const eventId = stringValue(event.id);
 
-      observations.push({
-        kind: "action",
-        action: `mcp:${mcpServer}:${toolName}`,
-        ...(eventId ? { eventId } : {}),
-      });
+      if (eventId) {
+        state.eventId = eventId;
+      }
+
+      for (const key of keys) {
+        pendingToolCalls.set(key, state);
+      }
+
+      if (
+        !state.emitted &&
+        state.functionName === "call_tool" &&
+        state.mcpServer &&
+        state.toolName
+      ) {
+        observations.push({
+          kind: "action",
+          action: `mcp:${state.mcpServer}:${state.toolName}`,
+          ...(state.eventId ? { eventId: state.eventId } : {}),
+        });
+
+        state.emitted = true;
+        for (const key of keys) {
+          pendingToolCalls.set(key, state);
+        }
+      }
     }
   }
 
@@ -113,7 +231,39 @@ export async function loadTrueForgeObservations(
   path: string,
 ): Promise<VerificationObservation[]> {
   const text = await readFile(path, "utf8");
-  const payload: unknown = JSON.parse(text);
+  const trimmed = text.trim();
 
-  return normalizeTrueForgeObservations(extractEvents(payload));
+  if (!trimmed) {
+    return [];
+  }
+
+  try {
+    const payload: unknown = JSON.parse(trimmed);
+
+    return normalizeTrueForgeObservations(extractEvents(payload));
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) {
+      throw error;
+    }
+  }
+
+  const records = trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line, index) => {
+      try {
+        return JSON.parse(line) as unknown;
+      } catch (error) {
+        throw new Error(
+          `Invalid TrueForge JSONL at line ${index + 1}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    });
+
+  const events = records.flatMap((record) => extractEvents(record));
+
+  return normalizeTrueForgeObservations(events);
 }

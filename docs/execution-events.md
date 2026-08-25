@@ -12,11 +12,13 @@ The goal is not to mirror TrueForge's event schema. The goal is to translate run
 EXECUTION_STARTED
 MODEL_OUTPUT_STARTED
 MODEL_OUTPUT_DELTA
+TOOL_CALL
+TOOL_RESULT
 EXECUTION_COMPLETED
 UNKNOWN
 ```
 
-This vocabulary is intentionally small. Tool calls, sandbox execution, approvals, subagents, failures, recovery, and reconnect will be added only after the corresponding TrueForge events are observed in later runtime experiments.
+This vocabulary is intentionally small. PR #5 adds the first observed TrueForge MCP tool-call/result mapping from the incident-investigation run. Sandbox execution, approvals, subagents, failures, recovery, and reconnect will be added only after the corresponding TrueForge events are observed in later runtime experiments.
 
 ## Data flow
 
