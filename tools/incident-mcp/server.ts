@@ -3,7 +3,8 @@ import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
-const PORT = 8782;
+const HOST = process.env.HOST ?? "127.0.0.1";
+const PORT = Number(process.env.PORT ?? "8782");
 
 function createIncidentServer(): McpServer {
   const server = new McpServer({
@@ -78,7 +79,7 @@ function createIncidentServer(): McpServer {
 }
 
 const app = createMcpExpressApp({
-  host: "0.0.0.0",
+  host: HOST,
 });
 
 app.post("/mcp", async (req, res) => {
@@ -104,8 +105,8 @@ app.delete("/mcp", (_req, res) => {
   });
 });
 
-app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT, HOST, () => {
   console.log(
-    `AgentGuard incident MCP listening on http://0.0.0.0:${PORT}/mcp`,
+    `AgentGuard incident MCP listening on http://${HOST}:${PORT}/mcp`,
   );
 });

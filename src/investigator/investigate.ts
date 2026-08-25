@@ -4,12 +4,15 @@ import { TrueForge } from "@truefoundry/trueforge-sdk";
 
 import { getEnv } from "../trueforge/env.js";
 import { buildInvestigationReport } from "./report.js";
-import type { InvestigationStatus } from "./types.js";
+import type {
+  IncidentLookupResult,
+  InvestigationStatus,
+} from "./types.js";
 
 const baseUrl = getEnv(
   "TRUEFORGE_BASE_URL",
   "http://localhost:8791",
-);
+).replace(/\/+$/, "");
 
 const agentName = getEnv(
   "TRUEFORGE_AGENT_NAME",
@@ -66,6 +69,7 @@ const stream = await client.sessions.createTurnStream(session.id, {
 let response = "";
 let incidentFacts: Record<string, unknown> | undefined;
 let investigationStatus: InvestigationStatus = "INCOMPLETE";
+let incidentLookupResult: IncidentLookupResult = "UNKNOWN";
 
 for await (const { data: event } of stream.withMetadata()) {
   if (event.type === "model.message.delta") {
@@ -87,9 +91,18 @@ for await (const { data: event } of stream.withMetadata()) {
         parsed &&
         typeof parsed === "object" &&
         !Array.isArray(parsed) &&
-        "incident_id" in parsed
+        "found" in parsed
       ) {
-        incidentFacts = parsed as Record<string, unknown>;
+        const parsedRecord = parsed as Record<string, unknown>;
+        const found = parsedRecord.found;
+
+        if (found === true) {
+          incidentLookupResult = "FOUND";
+          incidentFacts = parsedRecord;
+        } else if (found === false) {
+          incidentLookupResult = "NOT_FOUND";
+          incidentFacts = undefined;
+        }
       }
     } catch {
       // Tool responses such as list_tools/get_tool_info are not incident facts.
@@ -112,7 +125,7 @@ const report = buildInvestigationReport(
   {
     targetIncidentId: incidentId,
     status: investigationStatus,
-    evidenceRetrieved: incidentFacts !== undefined,
+    incidentLookupResult,
     rawResponse: response,
     ...(incidentFacts ? { incidentValue: incidentFacts } : {}),
   },
@@ -122,6 +135,7 @@ console.log("");
 console.log("Investigation");
 console.log("=============");
 console.log(`Incident: ${report.targetIncidentId}`);
+console.log(`Lookup result: ${report.incidentLookupResult}`);
 console.log(`Evidence retrieved: ${report.evidenceRetrieved ? "YES" : "NO"}`);
 console.log(`Investigation status: ${report.status}`);
 console.log("");

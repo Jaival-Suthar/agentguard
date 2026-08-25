@@ -1,5 +1,6 @@
 import type {
   IncidentFacts,
+  IncidentLookupResult,
   InvestigationReport,
   InvestigationStatus,
 } from "./types.js";
@@ -50,12 +51,13 @@ export function buildInvestigationReport(
   input: {
     targetIncidentId: string;
     status: InvestigationStatus;
-    evidenceRetrieved: boolean;
+    incidentLookupResult: IncidentLookupResult;
     rawResponse: string;
     incidentValue?: Record<string, unknown>;
   },
 ): InvestigationReport {
-  const incident = input.incidentValue
+  const incident = input.incidentLookupResult === "FOUND" &&
+    input.incidentValue
     ? parseIncidentFacts(input.incidentValue)
     : undefined;
 
@@ -90,7 +92,10 @@ export function buildInvestigationReport(
 
   const findings = [
     `Investigation status: ${input.status}`,
-    `Evidence retrieved: ${input.evidenceRetrieved ? "YES" : "NO"}`,
+    `Incident lookup result: ${input.incidentLookupResult}`,
+    `Evidence retrieved: ${
+      input.incidentLookupResult === "FOUND" ? "YES" : "NO"
+    }`,
   ];
 
   if (incident) {
@@ -103,7 +108,8 @@ export function buildInvestigationReport(
   return {
     targetIncidentId: input.targetIncidentId,
     status: input.status,
-    evidenceRetrieved: input.evidenceRetrieved,
+    incidentLookupResult: input.incidentLookupResult,
+    evidenceRetrieved: input.incidentLookupResult === "FOUND",
     ...(incident ? { incident } : {}),
     findings,
     knownFacts,
