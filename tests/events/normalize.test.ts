@@ -142,3 +142,184 @@ test("preserves unknown TrueForge events instead of throwing", () => {
     payload: { value: 42 },
   });
 });
+
+test("normalizes the observed TrueForge MCP trajectory", async () => {
+  const records: RecordedTrueForgeEvent[] = [
+    {
+      received_at: "2026-08-25T08:49:40.826Z",
+      event: {
+        type: "turn.created",
+        id: "turn-created-1",
+        turnId: "turn-1",
+        previousTurnId: null,
+        input: [
+          {
+            type: "user.message",
+            content:
+              "You are investigating a synthetic production incident involving checkout-api.",
+          },
+        ],
+        state: {
+          status: "running",
+        },
+        createdAt: "2026-08-25T08:49:40.811Z",
+        threadId: null,
+      },
+    },
+    {
+      received_at: "2026-08-25T08:49:49.233Z",
+      event: {
+        type: "model.message.delta",
+        id: "message-1",
+        threadId: "main",
+        createdAt: "2026-08-25T08:49:49.231Z",
+        toolCalls: [
+          {
+            toolInfo: {
+              type: "truefoundry-system",
+              name: "call_tool",
+            },
+            index: 0,
+            id: "call_276839",
+            type: "function",
+            function: {
+              name: "call_tool",
+              arguments: "",
+            },
+          },
+        ],
+      },
+    },
+    {
+      received_at: "2026-08-25T08:49:49.234Z",
+      event: {
+        type: "model.message.delta",
+        id: "message-1",
+        threadId: "main",
+        toolCalls: [
+          {
+            index: 0,
+            function: {
+              arguments:
+                '{"input":{"incident_id":"INC-042"},"mcp_server":"incident.lookup","tool_name":"lookup_incident"}',
+            },
+          },
+        ],
+      },
+    },
+    {
+      received_at: "2026-08-25T08:49:49.256Z",
+      event: {
+        type: "tool.response",
+        id: "tool-result-1",
+        threadId: "main",
+        toolCallId: "call_276839",
+        content:
+          '{\n  "found": true,\n  "incident_id": "INC-042",\n  "service": "analytics",\n  "severity": "high",\n  "status": "investigating",\n  "suspected_component": "nightly-worker"\n}',
+        createdAt: "2026-08-25T08:49:49.251Z",
+      },
+    },
+    {
+      received_at: "2026-08-25T08:49:57.046Z",
+      event: {
+        type: "turn.done",
+        id: "turn-done-1",
+        createdAt: "2026-08-25T08:49:57.042Z",
+        state: {
+          status: "done",
+          output: {
+            type: "model.message",
+            id: "message-final",
+          },
+          requiredActions: [],
+          completedAt: "2026-08-25T08:49:57.042Z",
+          metrics: {
+            totalTokens: 9771,
+          },
+        },
+        threadId: null,
+      },
+    },
+  ];
+  const events = normalizeTrueForgeRecords(records, {
+    runId: "mcp-run",
+    sessionId: "mcp-session",
+  });
+
+  assert.equal(events.length, 5);
+  assert.deepEqual(events.map((event) => event.type), [
+    "EXECUTION_STARTED",
+    "TOOL_CALL",
+    "TOOL_CALL",
+    "TOOL_RESULT",
+    "EXECUTION_COMPLETED",
+  ]);
+
+  const lookupCall = events[1];
+  assert.equal(lookupCall?.type, "TOOL_CALL");
+  const lookupCallData = lookupCall?.data as
+    | { toolCalls?: Array<Record<string, unknown>> }
+    | undefined;
+  assert.equal(
+    lookupCallData?.toolCalls?.[0]?.functionName,
+    "call_tool",
+  );
+  assert.equal(
+    lookupCallData?.toolCalls?.[0]?.toolName,
+    undefined,
+  );
+
+  const lookupCallContinuation = events[2];
+  assert.equal(lookupCallContinuation?.type, "TOOL_CALL");
+  const lookupCallContinuationData = lookupCallContinuation?.data as
+    | { toolCalls?: Array<Record<string, unknown>> }
+    | undefined;
+  assert.equal(
+    lookupCallContinuationData?.toolCalls?.[0]?.mcpServer,
+    "incident.lookup",
+  );
+  assert.equal(
+    lookupCallContinuationData?.toolCalls?.[0]?.toolName,
+    "lookup_incident",
+  );
+  assert.equal(
+    lookupCallContinuationData?.toolCalls?.[0]?.toolCallId,
+    "call_276839",
+  );
+
+  const lookupResult = events[3];
+  assert.equal(lookupResult?.type, "TOOL_RESULT");
+  const lookupResultData = lookupResult?.data as
+    | { toolCallId?: string; parsedContent?: Record<string, unknown> }
+    | undefined;
+  assert.equal(lookupResultData?.toolCallId, "call_276839");
+  assert.equal(lookupResultData?.parsedContent?.found, true);
+});
+
+test("does not falsely classify malformed tool payloads", () => {
+  const events = normalizeTrueForgeRecords(
+    [
+      {
+        received_at: "2026-08-25T10:00:00.000Z",
+        event: {
+          type: "model.message",
+          id: "bad-call",
+          tool_calls: [{ type: "function" }],
+        },
+      },
+      {
+        received_at: "2026-08-25T10:00:00.001Z",
+        event: {
+          type: "tool.response",
+          content: "{\"found\":true}",
+        },
+      },
+    ],
+    { runId: "malformed-run" },
+  );
+
+  assert.deepEqual(events.map((event) => event.type), [
+    "UNKNOWN",
+    "UNKNOWN",
+  ]);
+});

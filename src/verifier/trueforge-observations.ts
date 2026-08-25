@@ -4,7 +4,12 @@ import type { VerificationObservation } from "./types.js";
 
 type RawToolCall = {
   id?: unknown;
+  index?: unknown;
   type?: unknown;
+  toolInfo?: {
+    name?: unknown;
+    type?: unknown;
+  };
   function?: {
     name?: unknown;
     arguments?: unknown;
@@ -19,6 +24,7 @@ type RawTrueForgeEvent = {
   id?: unknown;
   type?: unknown;
   tool_calls?: unknown;
+  toolCalls?: unknown;
   tool_call_id?: unknown;
 };
 
@@ -49,6 +55,31 @@ function parseToolArguments(
   }
 }
 
+function toolCallEntries(event: RawTrueForgeEvent): RawToolCall[] {
+  if (Array.isArray(event.toolCalls)) {
+    return event.toolCalls.filter(isRecord) as RawToolCall[];
+  }
+
+  if (Array.isArray(event.tool_calls)) {
+    return event.tool_calls.filter(isRecord) as RawToolCall[];
+  }
+
+  return [];
+}
+
+function toolCallKey(
+  event: RawTrueForgeEvent,
+  toolCall: RawToolCall,
+  index: number,
+): string {
+  const eventId = stringValue(event.id) ?? "unknown";
+  const toolCallId = stringValue(toolCall.id);
+  const toolCallIndex =
+    typeof toolCall.index === "number" ? toolCall.index : index;
+
+  return `${eventId}:${toolCallIndex ?? toolCallId}`;
+}
+
 function extractEvents(payload: unknown): RawTrueForgeEvent[] {
   if (!isRecord(payload)) {
     throw new Error("TrueForge event file must contain an object.");
@@ -67,42 +98,73 @@ export function normalizeTrueForgeObservations(
   events: readonly RawTrueForgeEvent[],
 ): VerificationObservation[] {
   const observations: VerificationObservation[] = [];
+  const pendingToolCalls = new Map<
+    string,
+    {
+      eventId?: string;
+      functionName?: string;
+      mcpServer?: string;
+      toolName?: string;
+      emitted?: boolean;
+    }
+  >();
 
   for (const event of events) {
-    if (event.type !== "model.message" || !Array.isArray(event.tool_calls)) {
+    if (
+      event.type !== "model.message" &&
+      event.type !== "model.message.delta"
+    ) {
       continue;
     }
 
-    for (const rawToolCall of event.tool_calls) {
-      if (!isRecord(rawToolCall)) {
-        continue;
-      }
+    const entries = toolCallEntries(event);
 
-      const toolCall = rawToolCall as RawToolCall;
-      const functionName = stringValue(toolCall.function?.name);
-
-      if (functionName !== "call_tool") {
-        continue;
-      }
-
+    for (const [index, rawToolCall] of entries.entries()) {
+      const key = toolCallKey(event, rawToolCall, index);
+      const state = pendingToolCalls.get(key) ?? {};
+      const functionName = stringValue(rawToolCall.function?.name);
       const argumentsValue = parseToolArguments(
-        toolCall.function?.arguments,
+        rawToolCall.function?.arguments,
       );
+
+      if (functionName) {
+        state.functionName = functionName;
+      }
 
       const mcpServer = stringValue(argumentsValue?.mcp_server);
       const toolName = stringValue(argumentsValue?.tool_name);
 
-      if (!mcpServer || !toolName) {
-        continue;
+      if (mcpServer) {
+        state.mcpServer = mcpServer;
+      }
+
+      if (toolName) {
+        state.toolName = toolName;
       }
 
       const eventId = stringValue(event.id);
 
-      observations.push({
-        kind: "action",
-        action: `mcp:${mcpServer}:${toolName}`,
-        ...(eventId ? { eventId } : {}),
-      });
+      if (eventId) {
+        state.eventId = eventId;
+      }
+
+      pendingToolCalls.set(key, state);
+
+      if (
+        !state.emitted &&
+        state.functionName === "call_tool" &&
+        state.mcpServer &&
+        state.toolName
+      ) {
+        observations.push({
+          kind: "action",
+          action: `mcp:${state.mcpServer}:${state.toolName}`,
+          ...(state.eventId ? { eventId: state.eventId } : {}),
+        });
+
+        state.emitted = true;
+        pendingToolCalls.set(key, state);
+      }
     }
   }
 

@@ -4,6 +4,7 @@ import type {
   InvestigationReport,
   InvestigationStatus,
 } from "./types.js";
+import type { ExecutionEvent } from "../events/types.js";
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0
@@ -45,6 +46,179 @@ function parseIncidentFacts(
   }
 
   return incident;
+}
+
+function extractIncidentId(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const input =
+    record.input && typeof record.input === "object" && !Array.isArray(record.input)
+      ? (record.input as Record<string, unknown>)
+      : undefined;
+
+  return (
+    stringValue(input?.incident_id) ??
+    stringValue(record.incident_id) ??
+    stringValue(record.incidentId)
+  );
+}
+
+function toolCallEntries(event: ExecutionEvent): Record<string, unknown>[] {
+  const data = event.data as Record<string, unknown>;
+  const entries = data.toolCalls;
+
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+
+  return entries.filter(
+    (entry): entry is Record<string, unknown> =>
+      entry !== null && typeof entry === "object" && !Array.isArray(entry),
+  );
+}
+
+function stringOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function parseFound(value: unknown): boolean | undefined {
+  return value === true ? true : value === false ? false : undefined;
+}
+
+export interface CorrelatedIncidentLookupAttempt {
+  toolCallId: string;
+  incidentId?: string;
+  found?: boolean;
+  incidentValue?: Record<string, unknown>;
+}
+
+export interface CorrelatedIncidentLookupResolution {
+  incidentLookupResult: IncidentLookupResult;
+  incidentValue?: Record<string, unknown>;
+  lookupAttempts: CorrelatedIncidentLookupAttempt[];
+}
+
+export function resolveIncidentLookupFromEvents(
+  events: readonly ExecutionEvent[],
+  targetIncidentId: string,
+): CorrelatedIncidentLookupResolution {
+  const lookupCalls = new Map<
+    string,
+    {
+      incidentId?: string;
+      toolName?: string;
+      mcpServer?: string;
+    }
+  >();
+  const lookupResults = new Map<string, Record<string, unknown>>();
+
+  for (const event of events) {
+    if (event.type === "TOOL_CALL") {
+      for (const entry of toolCallEntries(event)) {
+        const toolCallId = stringOrUndefined(entry.toolCallId);
+
+        if (!toolCallId) {
+          continue;
+        }
+
+        const current = lookupCalls.get(toolCallId) ?? {};
+        const parsedArguments =
+          entry.parsedArguments &&
+          typeof entry.parsedArguments === "object" &&
+          !Array.isArray(entry.parsedArguments)
+            ? (entry.parsedArguments as Record<string, unknown>)
+            : undefined;
+
+        const toolName = stringOrUndefined(entry.toolName);
+        const mcpServer = stringOrUndefined(entry.mcpServer);
+        const incidentId =
+          extractIncidentId(parsedArguments) ??
+          extractIncidentId(entry.arguments);
+
+        if (toolName) {
+          current.toolName = toolName;
+        }
+
+        if (mcpServer) {
+          current.mcpServer = mcpServer;
+        }
+
+        if (incidentId) {
+          current.incidentId = incidentId;
+        }
+
+        lookupCalls.set(toolCallId, current);
+      }
+    }
+
+    if (event.type === "TOOL_RESULT") {
+      const data = event.data as Record<string, unknown>;
+      const toolCallId = stringOrUndefined(data.toolCallId);
+      const parsedContent =
+        data.parsedContent &&
+        typeof data.parsedContent === "object" &&
+        !Array.isArray(data.parsedContent)
+          ? (data.parsedContent as Record<string, unknown>)
+          : undefined;
+
+      if (toolCallId && parsedContent) {
+        lookupResults.set(toolCallId, parsedContent);
+      }
+    }
+  }
+
+  const lookupAttempts: CorrelatedIncidentLookupAttempt[] = [];
+
+  for (const [toolCallId, call] of lookupCalls.entries()) {
+    const incidentValue = lookupResults.get(toolCallId);
+
+    if (!incidentValue) {
+      continue;
+    }
+
+    const found = parseFound(incidentValue.found);
+
+    if (found === undefined) {
+      continue;
+    }
+
+    lookupAttempts.push({
+      toolCallId,
+      ...(call.incidentId ? { incidentId: call.incidentId } : {}),
+      found,
+      incidentValue,
+    });
+  }
+
+  const targetAttempts = lookupAttempts.filter(
+    (attempt) => attempt.incidentId === targetIncidentId,
+  );
+  const successfulAttempt = targetAttempts.find((attempt) => attempt.found);
+
+  if (successfulAttempt) {
+    return {
+      incidentLookupResult: "FOUND",
+      ...(successfulAttempt.incidentValue
+        ? { incidentValue: successfulAttempt.incidentValue }
+        : {}),
+      lookupAttempts,
+    };
+  }
+
+  if (targetAttempts.some((attempt) => attempt.found === false)) {
+    return {
+      incidentLookupResult: "NOT_FOUND",
+      lookupAttempts,
+    };
+  }
+
+  return {
+    incidentLookupResult: "UNKNOWN",
+    lookupAttempts,
+  };
 }
 
 export function buildInvestigationReport(
