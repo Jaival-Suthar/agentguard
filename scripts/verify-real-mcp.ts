@@ -7,8 +7,13 @@ import { loadExecutionContract } from "../src/contract/loader.js";
 import { loadTrueForgeObservations } from "../src/verifier/trueforge-observations.js";
 import { verifyObservations } from "../src/verifier/verify.js";
 
-const evidencePath =
-  process.argv[2] ?? "tests/fixtures/inc-042-mcp-events.json";
+const evidencePath = process.argv[2];
+
+if (!evidencePath) {
+  throw new Error(
+    "Usage: npm run verify:real-mcp -- data\\runs\\<run-id>.jsonl",
+  );
+}
 
 const contract = await loadExecutionContract(
   "contracts/incident-investigation.yaml",

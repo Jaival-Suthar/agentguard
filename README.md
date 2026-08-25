@@ -59,11 +59,11 @@ Run the incident investigation with:
 npm run investigate:incident
 ```
 
-The run emits raw TrueForge JSONL evidence under `data/runs/`, including real `model.message.tool_calls` and `tool.response` payloads for the MCP interaction. The deterministic verifier can then consume the captured trajectory with:
+The run emits raw TrueForge JSONL evidence under `data/runs/`, including the real MCP interaction. Verify the exact trajectory produced by that run by passing its JSONL file to the deterministic verifier:
 
 ```text
-npm run verify:real-mcp
-```
+npm run verify:real-mcp -- data\runs\<run-id>.jsonl
+The verifier consumes the exact JSONL trajectory produced by the investigation run.
 
 ## Planned phases
 
@@ -83,37 +83,46 @@ Do not provide the agent access to your personal filesystem, SSH keys, browser p
 
 The initial environment is intended for local experimentation only. Keep local TrueForge bound to localhost unless a deliberate authenticated deployment is configured.
 
-## Current phase — Contract Verifier
+## Current phase — Real TrueForge Golden Path
 
-PR #4 compares observed execution evidence against the declared execution contract and produces deterministic PASS, WARN, or FAIL findings.
+PR #6 proves the real TrueForge incident-investigation golden path with Ollama, MCP evidence capture, normalized tool-call correlation, evidence-derived reporting, and deterministic verification of the captured runtime trajectory.
 
-It adds:
-
-- runtime-independent verification observations
-- deterministic action-policy checks
-- approval-required action checks
-- denied-action checks
-- retry-limit checks
-- required-evidence checks
-- outcome-verification checks
-- event-referenced verification findings
-- fixture-based verifier tests
-
-The verifier does not use an LLM as the authority for compliance decisions.
+The golden path is:
 
 ```text
-Execution Contract
-        +
-Observed Execution Evidence
+Real TrueForge Runtime
         ↓
-Deterministic Verifier
+Raw JSONL Evidence
+        ↓
+Normalized Execution Events
+        ↓
+Evidence Correlation
+        ↓
+Incident Investigation Report
+        ↓
+Deterministic Contract Verification
         ↓
 PASS / WARN / FAIL
-        ↓
-Findings with event references
-```
 
 See [`docs/contract-verifier.md`](docs/contract-verifier.md) for the verification model and current scope.
+
+### Evidence boundary
+
+AgentGuard does not treat the model's final narrative as proof of execution.
+
+The investigation produces raw TrueForge runtime evidence first. AgentGuard then derives normalized execution observations and incident facts from the observed tool-call and tool-result trajectory.
+
+The deterministic verifier evaluates those observations against the declared execution contract.
+
+Model narrative
+      ≠
+Execution evidence
+
+Raw runtime evidence
+      ↓
+Normalized observations
+      ↓
+Deterministic verification
 
 ## Previous phase — Incident Investigation
 

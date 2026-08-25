@@ -30,6 +30,7 @@ type RawTrueForgeEvent = {
 
 type TrueForgeEventFile = {
   data?: unknown;
+  event?: unknown;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -82,16 +83,22 @@ function toolCallKey(
 
 function extractEvents(payload: unknown): RawTrueForgeEvent[] {
   if (!isRecord(payload)) {
-    throw new Error("TrueForge event file must contain an object.");
+    throw new Error("TrueForge event record must contain an object.");
   }
 
   const file = payload as TrueForgeEventFile;
 
-  if (!Array.isArray(file.data)) {
-    throw new Error("TrueForge event file must contain a data array.");
+  if (Array.isArray(file.data)) {
+    return file.data.filter(isRecord) as RawTrueForgeEvent[];
   }
 
-  return file.data.filter(isRecord) as RawTrueForgeEvent[];
+  if (isRecord(file.event)) {
+    return [file.event as RawTrueForgeEvent];
+  }
+
+  throw new Error(
+    "TrueForge event input must contain either a data array or an event object.",
+  );
 }
 
 export function normalizeTrueForgeObservations(
@@ -175,7 +182,39 @@ export async function loadTrueForgeObservations(
   path: string,
 ): Promise<VerificationObservation[]> {
   const text = await readFile(path, "utf8");
-  const payload: unknown = JSON.parse(text);
+  const trimmed = text.trim();
 
-  return normalizeTrueForgeObservations(extractEvents(payload));
+  if (!trimmed) {
+    return [];
+  }
+
+  try {
+    const payload: unknown = JSON.parse(trimmed);
+
+    return normalizeTrueForgeObservations(extractEvents(payload));
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) {
+      throw error;
+    }
+  }
+
+  const records = trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line, index) => {
+      try {
+        return JSON.parse(line) as unknown;
+      } catch (error) {
+        throw new Error(
+          `Invalid TrueForge JSONL at line ${index + 1}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    });
+
+  const events = records.flatMap((record) => extractEvents(record));
+
+  return normalizeTrueForgeObservations(events);
 }
