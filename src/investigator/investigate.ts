@@ -8,7 +8,11 @@ import { normalizeTrueForgeRecords } from "../trueforge/adapter.js";
 
 import { getEnv, requireEnv } from "../trueforge/env.js";
 
-import { RunStore, type RunMetadata } from "../trueforge/run-store.js";
+
+import {
+  RunStore,
+  type RunMetadata,
+} from "../trueforge/run-store.js";
 
 import {
   buildInvestigationReport,
@@ -24,7 +28,14 @@ const baseUrl = getEnv(
 
 const agentName = requireEnv("TRUEFORGE_AGENT_NAME");
 
-const requestedModelName = requireEnv("TRUEFORGE_MODEL_NAME");
+const requestedModelName = requireEnv(
+  "TRUEFORGE_MODEL_NAME",
+);
+
+const mcpServerName = getEnv(
+  "TRUEFORGE_MCP_SERVER_NAME",
+  "incident.lookup",
+);
 
 const incidentId = getEnv(
   "TRUEFORGE_INCIDENT_ID",
@@ -58,9 +69,9 @@ const prompt = [
   "You are investigating a synthetic production incident involving checkout-api.",
   "",
   `Target incident: ${incidentId}.`,
-  "Use the incident.lookup MCP server to gather evidence.",
+  `Use the ${mcpServerName} MCP server to gather evidence.`,
   "Call its lookup_incident tool for the target incident.",
-  "Use exactly the MCP server named incident.lookup.",
+  `Use exactly the MCP server named ${mcpServerName}.`,
   "Do not guess or substitute another MCP server name.",
   "Do not ask the user which MCP server to use.",
   "Do not invent facts.",
@@ -84,14 +95,13 @@ let runError: unknown;
 
 try {
   console.log(`Run ID: ${runId}`);
-
   console.log(`TrueForge: ${baseUrl}`);
-
   console.log(`Requested model: ${requestedModelName}`);
-
+  console.log(`Requested MCP server: ${mcpServerName}`);
   console.log("");
 
-  const { data: savedAgents } = await client.agents.list();
+  const { data: savedAgents } =
+    await client.agents.list();
 
   const savedAgent = savedAgents.find(
     (agent) => agent.name === agentName,
@@ -103,18 +113,86 @@ try {
     );
   }
 
+  /*
+   * The saved agent is the normal incident investigator
+   * and normally contains:
+   *
+   *   incident.lookup
+   *
+   * For chaos testing we need to create the session from
+   * the same saved agent but replace the configured MCP
+   * server name with the requested connector.
+   *
+   * This keeps the connector configuration intact while
+   * allowing:
+   *
+   *   incident.lookup
+   *
+   * or:
+   *
+   *   incident.lookup.chaos
+   *
+   * to be selected at runtime.
+   */
+  const originalMcpServerName = "incident.lookup";
+
+const savedMcpServers =
+  savedAgent.manifest.mcpServers ?? [];
+
+if (savedMcpServers.length === 0) {
+  throw new Error(
+    `Saved TrueForge agent ${agentName} has no MCP server configuration.`,
+  );
+}
+
+const configuredMcpServers = savedMcpServers.map((server) => {
+    if (server.name === originalMcpServerName) {
+      return {
+        ...server,
+        name: mcpServerName,
+      };
+    }
+
+    return server;
+  });
+
+const hasRequestedMcpServer =
+  configuredMcpServers.some(
+    (server) => server.name === mcpServerName,
+  );
+
+if (!hasRequestedMcpServer) {
+  throw new Error(
+    `Unable to configure MCP server "${mcpServerName}" from saved agent "${agentName}".`,
+  );
+}
+
   const sessionAgentSpec = {
     ...savedAgent.manifest,
     model: {
       name: requestedModelName,
     },
+    mcpServers: configuredMcpServers,
   };
 
-  const { data: session } = await client.sessions.create({
-    agent: {
-      spec: sessionAgentSpec,
-    },
-  });
+  console.log("Session agent MCP configuration:");
+
+  console.log(
+    JSON.stringify(
+      configuredMcpServers,
+      null,
+      2,
+    ),
+  );
+
+  console.log("");
+
+  const { data: session } =
+    await client.sessions.create({
+      agent: {
+        spec: sessionAgentSpec,
+      },
+    });
 
   metadata.sessionId = session.id;
 
@@ -124,35 +202,43 @@ try {
     );
   }
 
-  const runtimeModelName = session.agent.spec.model.name;
+  const runtimeModelName =
+    session.agent.spec.model.name;
 
   metadata.model = runtimeModelName;
 
   await store.writeMetadata(metadata);
 
   console.log(`Session: ${session.id}`);
-
   console.log(`Agent: ${agentName}`);
-
   console.log(`Runtime model: ${runtimeModelName}`);
-
+  console.log(`MCP server: ${mcpServerName}`);
   console.log(`Incident: ${incidentId}`);
-
   console.log("");
 
-  console.log("Starting incident investigation...");
+  console.log(
+    "Starting incident investigation...",
+  );
+  console.log("");
 
-  const stream = await client.sessions.createTurnStream(session.id, {
-    input: [
+  const stream =
+    await client.sessions.createTurnStream(
+      session.id,
       {
-        type: "user.message",
-        content: prompt,
+        input: [
+          {
+            type: "user.message",
+            content: prompt,
+          },
+        ],
       },
-    ],
-  });
+    );
 
-  for await (const { data: event } of stream.withMetadata()) {
-    const receivedAt = new Date().toISOString();
+  for await (
+    const { data: event } of stream.withMetadata()
+  ) {
+    const receivedAt =
+      new Date().toISOString();
 
     metadata.eventCount += 1;
 
@@ -164,14 +250,19 @@ try {
 
     const record: RecordedTrueForgeEvent = {
       received_at: receivedAt,
-      event: event as unknown as Record<string, unknown>,
+      event: event as unknown as Record<
+        string,
+        unknown
+      >,
     };
 
     await store.append(record);
 
     recordedEvents.push(record);
 
-    if (event.type === "model.message.delta") {
+    if (
+      event.type === "model.message.delta"
+    ) {
       const content =
         typeof event.content === "string"
           ? event.content
@@ -188,12 +279,11 @@ try {
           ? "COMPLETED"
           : "INCOMPLETE";
 
-      metadata.finalStatus = event.state.status;
+      metadata.finalStatus =
+        event.state.status;
 
       console.log("");
-
       console.log("");
-
       console.log(
         `Turn status: ${event.state.status}`,
       );
@@ -218,9 +308,12 @@ try {
     }`,
   );
 } finally {
-  metadata.completedAt = new Date().toISOString();
+  metadata.completedAt =
+    new Date().toISOString();
 
-  metadata.eventTypes = [...eventTypes].sort();
+  metadata.eventTypes = [
+    ...eventTypes,
+  ].sort();
 
   try {
     await store.writeMetadata(metadata);
@@ -241,23 +334,18 @@ try {
 
 if (runError) {
   console.log("");
-
   console.log("Investigation");
-
   console.log("=============");
-
   console.log(`Incident: ${incidentId}`);
-
   console.log("Lookup result: UNKNOWN");
-
   console.log("Evidence retrieved: NO");
-
-  console.log("Investigation status: INCOMPLETE");
+  console.log(
+    "Investigation status: INCOMPLETE",
+  );
 
   console.log("");
 
   console.log("Known facts:");
-
   console.log("- None observed.");
 
   console.log("");
@@ -286,9 +374,13 @@ if (runError) {
 
   console.log("");
 
-  console.log(`Evidence: ${store.jsonlPath}`);
+  console.log(
+    `Evidence: ${store.jsonlPath}`,
+  );
 
-  console.log(`Metadata: ${store.metadataPath}`);
+  console.log(
+    `Metadata: ${store.metadataPath}`,
+  );
 
   console.log(
     `Events captured: ${metadata.eventCount}`,
@@ -300,24 +392,32 @@ if (runError) {
 
   process.exitCode = 1;
 } else {
-  const normalizedEvents = normalizeTrueForgeRecords(
-    recordedEvents,
-    {
-      runId,
-      ...(metadata.sessionId
-        ? { sessionId: metadata.sessionId }
-        : {}),
-    },
-  );
+  const normalizedEvents =
+    normalizeTrueForgeRecords(
+      recordedEvents,
+      {
+        runId,
+        ...(metadata.sessionId
+          ? {
+              sessionId:
+                metadata.sessionId,
+            }
+          : {}),
+      },
+    );
 
   const lookupResolution =
     resolveIncidentLookupFromEvents(
       normalizedEvents,
       incidentId,
+      {
+        mcpServerName,
+        toolName: "lookup_incident",
+      },
     );
 
-  const report = buildInvestigationReport(
-    {
+  const report =
+    buildInvestigationReport({
       targetIncidentId: incidentId,
       status: investigationStatus,
       incidentLookupResult:
@@ -329,13 +429,11 @@ if (runError) {
               lookupResolution.incidentValue,
           }
         : {}),
-    },
-  );
+    });
 
   console.log("");
 
   console.log("Investigation");
-
   console.log("=============");
 
   console.log(
@@ -388,9 +486,13 @@ if (runError) {
 
   console.log("");
 
-  console.log(`Evidence: ${store.jsonlPath}`);
+  console.log(
+    `Evidence: ${store.jsonlPath}`,
+  );
 
-  console.log(`Metadata: ${store.metadataPath}`);
+  console.log(
+    `Metadata: ${store.metadataPath}`,
+  );
 
   console.log(
     `Events captured: ${metadata.eventCount}`,

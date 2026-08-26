@@ -1,0 +1,27 @@
+version: 1
+
+name: chaos-incident-investigation
+
+description: >
+  Test-only execution contract for AgentGuard Chaos MCP verification.
+  This contract is intentionally separate from the production
+  incident-investigation contract.
+
+actions:
+  allow:
+    - mcp:incident.lookup.chaos:lookup_incident
+
+  approvalRequired: []
+
+  deny:
+    - host:filesystem.read
+    - host:filesystem.write
+    - host:shell
+    - secrets:read
+
+limits:
+  maxRetries: 3
+
+requirements:
+  verificationRequired: true
+  requiredEvidence: []

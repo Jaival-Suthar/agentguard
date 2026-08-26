@@ -10,6 +10,7 @@
     "trueforge:health": "tsx src/trueforge/health.ts",
     "trueforge:probe": "tsx src/trueforge/probe.ts",
     "verify:real-mcp": "tsx scripts/verify-real-mcp.ts",
+    "verify:chaos-mcp": "tsx scripts/verify-chaos-mcp.ts",
     "investigate:incident": "tsx src/investigator/investigate.ts"
   },
   "engines": {
