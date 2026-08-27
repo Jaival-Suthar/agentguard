@@ -386,3 +386,26 @@ test("does not attach a shifted unindexed continuation to another tool call", ()
 
   assert.equal(data?.toolCalls?.[0]?.toolCallId, undefined);
 });
+
+test("normalizes TrueForge sandbox.created into a first-class AgentGuard event", () => {
+  const events = normalizeTrueForgeRecords(
+    [
+      {
+        received_at: "2026-08-27T06:30:00.000Z",
+        event: {
+          type: "sandbox.created",
+          id: "sandbox-event-1",
+          sandbox_id: "v1:local:sbx-1",
+          thread_id: null,
+          created_at: "2026-08-27T06:29:59.000Z",
+        },
+      },
+    ],
+    { runId: "sandbox-run", sessionId: "sandbox-session" },
+  );
+
+  assert.equal(events[0]?.type, "SANDBOX_CREATED");
+  assert.equal(events[0]?.data.sandboxId, "v1:local:sbx-1");
+  assert.equal(events[0]?.timestamp, "2026-08-27T06:29:59.000Z");
+  assert.equal(events[0]?.sessionId, "sandbox-session");
+});

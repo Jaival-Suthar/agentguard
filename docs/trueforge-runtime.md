@@ -135,3 +135,43 @@ Those raw files become the source material for PR #3, where we design the normal
 * [ ] Session id persisted
 
 MCP, sandbox, approval, subagents, and reconnect are configured and demonstrated incrementally on this same runtime in later commits within the broader runtime branch if needed, but **this first runtime proof must establish the event surface before we model it.**
+
+
+## Sandbox capability proof
+
+The capability branch adds an opt-in sandbox mode to the incident investigator. It overrides only the session runtime config and leaves the saved agent unchanged.
+
+Run:
+
+```powershell
+npm run investigate:incident:sandbox
+```
+
+In sandbox mode the agent is instructed to use TrueForge's `Sandbox.exec` tool for a deterministic evidence-analysis step. AgentGuard records the raw TrueForge trajectory and normalizes `sandbox.created`, the `exec` tool call as `sandbox:execute`, and its `tool.response`.
+
+### Provider requirement
+
+TrueForge must report the sandbox capability as enabled. In standalone mode this comes from TrueForge's local sandbox support probe. In distributed/Docker mode, configure the supported sandbox provider before enabling the feature. AgentGuard deliberately fails at session admission rather than silently falling back to host execution.
+
+## Sandbox provider setup
+
+Enabling `config.sandbox.enabled` is not enough: TrueForge must also have a sandbox provider configured for the tenant. The current TrueForge runtime exposes Daytona as the sandbox provider.
+
+Configure it once with the AgentGuard helper:
+
+```powershell
+# Put the real key in your local .env only.
+DAYTONA_API_KEY=...
+
+npm run trueforge:configure-sandbox
+```
+
+The helper calls TrueForge's sandbox-provider settings endpoint and stores the Daytona credential in TrueForge. AgentGuard never prints or records the API key.
+
+After configuration, verify the hero path with:
+
+```powershell
+npm run investigate:incident:sandbox
+```
+
+If the run still reports `sandbox is enabled but no sandbox provider is configured`, the provider was not configured in the same TrueForge instance referenced by `TRUEFORGE_BASE_URL`.

@@ -11,7 +11,9 @@
     "trueforge:probe": "tsx src/trueforge/probe.ts",
     "verify:real-mcp": "tsx scripts/verify-real-mcp.ts",
     "verify:chaos-mcp": "tsx scripts/verify-chaos-mcp.ts",
-    "investigate:incident": "tsx src/investigator/investigate.ts"
+    "investigate:incident": "tsx src/investigator/investigate.ts",
+    "trueforge:configure-sandbox": "tsx scripts/configure-trueforge-sandbox.ts",
+    "investigate:incident:sandbox": "tsx src/investigator/investigate.ts --sandbox"
   },
   "engines": {
     "node": ">=22.14.0"
