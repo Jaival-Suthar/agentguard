@@ -1,10 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { parseExecutionContract } from "../../src/contract/loader.js";
-import { verifyObservations } from "../../src/verifier/verify.js";
+import {
+  parseExecutionContract,
+} from "../../src/contract/loader.js";
 
-const contract = parseExecutionContract(`
+import {
+  verifyObservations,
+} from "../../src/verifier/verify.js";
+
+const contract =
+  parseExecutionContract(`
 version: 1
 name: incident-investigation
 actions:
@@ -23,182 +29,581 @@ requirements:
     - verification
 `);
 
-test("passes an explicitly allowed action", () => {
-  const report = verifyObservations(contract, [
-    {
-      kind: "action",
-      action: "mcp:database.read",
-      eventId: "event-1",
-    },
-  ]);
+function verifiedOutcome(
+  eventId = "outcome-event",
+): {
+  kind: "outcome";
+  outcomeVerified: true;
+  eventId: string;
+} {
+  return {
+    kind: "outcome",
+    outcomeVerified: true,
+    eventId,
+  };
+}
 
-  assert.equal(report.verdict, "PASS");
-  assert.equal(report.failures, 0);
-  assert.equal(report.findings[0]?.code, "ACTION_ALLOWED");
-});
+test(
+  "passes an explicitly allowed action with a verified outcome",
+  () => {
+    const report =
+      verifyObservations(
+        contract,
+        [
+          {
+            kind: "action",
+            action:
+              "mcp:database.read",
+            eventId:
+              "event-1",
+          },
 
-test("fails an explicitly denied action", () => {
-  const report = verifyObservations(contract, [
-    {
-      kind: "action",
-      action: "host:filesystem.read",
-      eventId: "event-2",
-    },
-  ]);
+          verifiedOutcome(),
+        ],
+      );
 
-  assert.equal(report.verdict, "FAIL");
-  assert.equal(report.failures, 1);
-  assert.equal(report.findings[0]?.code, "ACTION_DENIED");
-});
+    assert.equal(
+      report.verdict,
+      "PASS",
+    );
 
-test("passes an approval-required action when approval is observed", () => {
-  const report = verifyObservations(contract, [
-    {
-      kind: "action",
-      action: "mcp:github.write",
-      approved: true,
-      eventId: "event-3",
-    },
-  ]);
+    assert.equal(
+      report.failures,
+      0,
+    );
 
-  assert.equal(report.verdict, "PASS");
-  assert.equal(report.findings[0]?.code, "APPROVAL_GRANTED");
-});
+    assert.equal(
+      report.findings[0]?.code,
+      "ACTION_ALLOWED",
+    );
+  },
+);
 
-test("passes an approval-required action with a separate correlated approval", () => {
-  const report = verifyObservations(contract, [
-    {
-      kind: "action",
-      action: "mcp:github.write",
-      eventId: "action-event-1",
-    },
-    {
-      kind: "approval",
-      approved: true,
-      actionEventId: "action-event-1",
-      eventId: "approval-event-1",
-    },
-  ]);
+test(
+  "fails an explicitly denied action",
+  () => {
+    const report =
+      verifyObservations(
+        contract,
+        [
+          {
+            kind: "action",
+            action:
+              "host:filesystem.read",
+            eventId:
+              "event-2",
+          },
 
-  assert.equal(report.verdict, "PASS");
-  assert.equal(report.failures, 0);
-  assert.equal(report.findings[0]?.code, "APPROVAL_GRANTED");
-});
+          verifiedOutcome(),
+        ],
+      );
 
-test("fails an approval-required action when approval is missing", () => {
-  const report = verifyObservations(contract, [
-    {
-      kind: "action",
-      action: "mcp:github.write",
-      eventId: "event-4",
-    },
-  ]);
+    assert.equal(
+      report.verdict,
+      "FAIL",
+    );
 
-  assert.equal(report.verdict, "FAIL");
-  assert.equal(report.findings[0]?.code, "APPROVAL_MISSING");
-});
+    assert.equal(
+      report.failures,
+      1,
+    );
 
-test("fails when retry limit is exceeded", () => {
-  const report = verifyObservations(contract, [
-    {
-      kind: "retry",
-      retryCount: 4,
-      eventId: "event-5",
-    },
-  ]);
+    assert.equal(
+      report.findings[0]?.code,
+      "ACTION_DENIED",
+    );
+  },
+);
 
-  assert.equal(report.verdict, "FAIL");
-  assert.equal(report.findings[0]?.code, "RETRY_LIMIT_EXCEEDED");
-});
+test(
+  "passes an approval-required action when approval is observed",
+  () => {
+    const report =
+      verifyObservations(
+        contract,
+        [
+          {
+            kind: "action",
+            action:
+              "mcp:github.write",
+            approved: true,
+            eventId:
+              "event-3",
+          },
 
-test("warns when retry count is negative", () => {
-  const report = verifyObservations(contract, [
-    {
-      kind: "retry",
-      retryCount: -1,
-      eventId: "event-negative-retry",
-    },
-  ]);
+          verifiedOutcome(),
+        ],
+      );
 
-  assert.equal(report.verdict, "WARN");
-  assert.equal(report.warnings, 1);
-  assert.equal(report.findings[0]?.code, "MALFORMED_OBSERVATION");
-});
+    assert.equal(
+      report.verdict,
+      "PASS",
+    );
 
-test("passes when retry count is within the contract limit", () => {
-  const report = verifyObservations(contract, [
-    {
-      kind: "retry",
-      retryCount: 2,
-      eventId: "event-retry-ok",
-    },
-  ]);
+    assert.equal(
+      report.findings[0]?.code,
+      "APPROVAL_GRANTED",
+    );
+  },
+);
 
-  assert.equal(report.verdict, "PASS");
-  assert.equal(report.findings[0]?.code, "RETRY_WITHIN_LIMIT");
-});
+test(
+  "passes an approval-required action with a separate correlated approval",
+  () => {
+    const report =
+      verifyObservations(
+        contract,
+        [
+          {
+            kind: "action",
+            action:
+              "mcp:github.write",
+            eventId:
+              "action-event-1",
+          },
 
-test("fails when required evidence is missing", () => {
-  const report = verifyObservations(contract, [
-    {
-      kind: "evidence",
-      evidence: ["root_cause"],
-      eventId: "event-6",
-    },
-  ]);
+          {
+            kind: "approval",
+            approved: true,
+            actionEventId:
+              "action-event-1",
+            eventId:
+              "approval-event-1",
+          },
 
-  assert.equal(report.verdict, "FAIL");
-  assert.equal(report.findings[0]?.code, "REQUIRED_EVIDENCE_MISSING");
-});
+          verifiedOutcome(),
+        ],
+      );
 
-test("passes when all required evidence is present", () => {
-  const report = verifyObservations(contract, [
-    {
-      kind: "evidence",
-      evidence: ["root_cause", "verification"],
-      eventId: "event-evidence-ok",
-    },
-  ]);
+    assert.equal(
+      report.verdict,
+      "PASS",
+    );
 
-  assert.equal(report.verdict, "PASS");
-  assert.equal(report.findings[0]?.code, "REQUIRED_EVIDENCE_PRESENT");
-});
+    assert.equal(
+      report.failures,
+      0,
+    );
 
-test("fails when outcome verification is required but absent", () => {
-  const report = verifyObservations(contract, [
-    {
-      kind: "outcome",
-      outcomeVerified: false,
-      eventId: "event-7",
-    },
-  ]);
+    assert.equal(
+      report.findings[0]?.code,
+      "APPROVAL_GRANTED",
+    );
+  },
+);
 
-  assert.equal(report.verdict, "FAIL");
-  assert.equal(report.findings[0]?.code, "OUTCOME_UNVERIFIED");
-});
+test(
+  "fails an approval-required action when approval is missing",
+  () => {
+    const report =
+      verifyObservations(
+        contract,
+        [
+          {
+            kind: "action",
+            action:
+              "mcp:github.write",
+            eventId:
+              "event-4",
+          },
 
-test("passes when outcome verification is satisfied", () => {
-  const report = verifyObservations(contract, [
-    {
-      kind: "outcome",
-      outcomeVerified: true,
-      eventId: "event-outcome-ok",
-    },
-  ]);
+          verifiedOutcome(),
+        ],
+      );
 
-  assert.equal(report.verdict, "PASS");
-  assert.equal(report.findings[0]?.code, "OUTCOME_VERIFIED");
-});
+    assert.equal(
+      report.verdict,
+      "FAIL",
+    );
 
-test("warns on an unsupported observation kind", () => {
-  const report = verifyObservations(contract, [
-    {
-      kind: "bogus" as never,
-      eventId: "event-unknown-kind",
-    },
-  ]);
+    assert.equal(
+      report.failures,
+      1,
+    );
 
-  assert.equal(report.verdict, "WARN");
-  assert.equal(report.warnings, 1);
-  assert.equal(report.findings[0]?.code, "MALFORMED_OBSERVATION");
-});
+    assert.equal(
+      report.findings[0]?.code,
+      "APPROVAL_MISSING",
+    );
+  },
+);
+
+test(
+  "fails when retry limit is exceeded",
+  () => {
+    const report =
+      verifyObservations(
+        contract,
+        [
+          {
+            kind: "retry",
+            retryCount: 4,
+            eventId:
+              "event-5",
+          },
+
+          verifiedOutcome(),
+        ],
+      );
+
+    assert.equal(
+      report.verdict,
+      "FAIL",
+    );
+
+    assert.equal(
+      report.failures,
+      1,
+    );
+
+    assert.equal(
+      report.findings[0]?.code,
+      "RETRY_LIMIT_EXCEEDED",
+    );
+  },
+);
+
+test(
+  "warns when retry count is negative",
+  () => {
+    const report =
+      verifyObservations(
+        contract,
+        [
+          {
+            kind: "retry",
+            retryCount: -1,
+            eventId:
+              "event-negative-retry",
+          },
+
+          verifiedOutcome(),
+        ],
+      );
+
+    assert.equal(
+      report.verdict,
+      "WARN",
+    );
+
+    assert.equal(
+      report.warnings,
+      1,
+    );
+
+    assert.equal(
+      report.findings[0]?.code,
+      "MALFORMED_OBSERVATION",
+    );
+  },
+);
+
+test(
+  "passes when retry count is within the contract limit",
+  () => {
+    const report =
+      verifyObservations(
+        contract,
+        [
+          {
+            kind: "retry",
+            retryCount: 2,
+            eventId:
+              "event-retry-ok",
+          },
+
+          verifiedOutcome(),
+        ],
+      );
+
+    assert.equal(
+      report.verdict,
+      "PASS",
+    );
+
+    assert.equal(
+      report.findings[0]?.code,
+      "RETRY_WITHIN_LIMIT",
+    );
+  },
+);
+
+test(
+  "fails when required evidence is missing",
+  () => {
+    const report =
+      verifyObservations(
+        contract,
+        [
+          {
+            kind: "evidence",
+            evidence: [
+              "root_cause",
+            ],
+            eventId:
+              "event-6",
+          },
+
+          verifiedOutcome(),
+        ],
+      );
+
+    assert.equal(
+      report.verdict,
+      "FAIL",
+    );
+
+    assert.equal(
+      report.failures,
+      1,
+    );
+
+    assert.equal(
+      report.findings[0]?.code,
+      "REQUIRED_EVIDENCE_MISSING",
+    );
+  },
+);
+
+test(
+  "passes when all required evidence is present",
+  () => {
+    const report =
+      verifyObservations(
+        contract,
+        [
+          {
+            kind: "evidence",
+            evidence: [
+              "root_cause",
+              "verification",
+            ],
+            eventId:
+              "event-evidence-ok",
+          },
+
+          verifiedOutcome(),
+        ],
+      );
+
+    assert.equal(
+      report.verdict,
+      "PASS",
+    );
+
+    assert.equal(
+      report.findings[0]?.code,
+      "REQUIRED_EVIDENCE_PRESENT",
+    );
+  },
+);
+
+test(
+  "fails when outcome is present but unverified",
+  () => {
+    const report =
+      verifyObservations(
+        contract,
+        [
+          {
+            kind: "outcome",
+            outcomeVerified: false,
+            eventId:
+              "event-7",
+          },
+        ],
+      );
+
+    assert.equal(
+      report.verdict,
+      "FAIL",
+    );
+
+    assert.equal(
+      report.failures,
+      1,
+    );
+
+    assert.equal(
+      report.findings[0]?.code,
+      "OUTCOME_UNVERIFIED",
+    );
+  },
+);
+
+test(
+  "fails when verification is required but no outcome is observed",
+  () => {
+    const report =
+      verifyObservations(
+        contract,
+        [
+          {
+            kind: "action",
+            action:
+              "mcp:database.read",
+            eventId:
+              "event-no-outcome",
+          },
+        ],
+      );
+
+    assert.equal(
+      report.verdict,
+      "FAIL",
+    );
+
+    assert.equal(
+      report.failures,
+      1,
+    );
+
+    assert.equal(
+      report.findings[0]?.code,
+      "ACTION_ALLOWED",
+    );
+
+    assert.equal(
+      report.findings[1]?.code,
+      "OUTCOME_MISSING",
+    );
+  },
+);
+
+test(
+  "fails an empty trajectory when verification is required",
+  () => {
+    const report =
+      verifyObservations(
+        contract,
+        [],
+      );
+
+    assert.equal(
+      report.verdict,
+      "FAIL",
+    );
+
+    assert.equal(
+      report.observationsEvaluated,
+      0,
+    );
+
+    assert.equal(
+      report.failures,
+      1,
+    );
+
+    assert.equal(
+      report.findings[0]?.code,
+      "OUTCOME_MISSING",
+    );
+  },
+);
+
+test(
+  "passes when outcome verification is satisfied",
+  () => {
+    const report =
+      verifyObservations(
+        contract,
+        [
+          verifiedOutcome(
+            "event-outcome-ok",
+          ),
+        ],
+      );
+
+    assert.equal(
+      report.verdict,
+      "PASS",
+    );
+
+    assert.equal(
+      report.findings[0]?.code,
+      "OUTCOME_VERIFIED",
+    );
+  },
+);
+
+test(
+  "treats a verified tool error as a verified outcome",
+  () => {
+    const report =
+      verifyObservations(
+        contract,
+        [
+          {
+            kind: "action",
+            action:
+              "mcp:database.read",
+            eventId:
+              "event-tool-error",
+          },
+
+          {
+            kind: "outcome",
+            outcomeVerified: true,
+            eventId:
+              "event-tool-error-outcome",
+            actionEventId:
+              "event-tool-error",
+          },
+        ],
+      );
+
+    assert.equal(
+      report.verdict,
+      "PASS",
+    );
+
+    assert.equal(
+      report.failures,
+      0,
+    );
+
+    assert.ok(
+      report.findings.some(
+        (finding) =>
+          finding.code ===
+          "OUTCOME_VERIFIED",
+      ),
+    );
+  },
+);
+
+test(
+  "warns on an unsupported observation kind",
+  () => {
+    const report =
+      verifyObservations(
+        contract,
+        [
+          {
+            kind:
+              "bogus" as never,
+
+            eventId:
+              "event-unknown-kind",
+          },
+
+          verifiedOutcome(),
+        ],
+      );
+
+    assert.equal(
+      report.verdict,
+      "WARN",
+    );
+
+    assert.equal(
+      report.warnings,
+      1,
+    );
+
+    assert.equal(
+      report.findings[0]?.code,
+      "MALFORMED_OBSERVATION",
+    );
+  },
+);

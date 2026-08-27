@@ -4,7 +4,8 @@ export const VERIFICATION_VERDICTS = [
   "FAIL",
 ] as const;
 
-export type VerificationVerdict = (typeof VERIFICATION_VERDICTS)[number];
+export type VerificationVerdict =
+  (typeof VERIFICATION_VERDICTS)[number];
 
 export type ObservationKind =
   | "action"
@@ -37,8 +38,11 @@ export interface VerificationFinding {
     | "REQUIRED_EVIDENCE_MISSING"
     | "REQUIRED_EVIDENCE_PRESENT"
     | "OUTCOME_UNVERIFIED"
+    | "OUTCOME_MISSING"
     | "OUTCOME_VERIFIED"
     | "UNKNOWN_ACTION"
+    | "EXPECTED_CHAOS_ACTION_MISSING"
+    | "EXPECTED_CHAOS_OUTCOME_MISSING"
     | "MALFORMED_OBSERVATION";
   verdict: VerificationVerdict;
   message: string;

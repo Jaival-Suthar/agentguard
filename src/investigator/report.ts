@@ -54,8 +54,11 @@ function extractIncidentId(value: unknown): string | undefined {
   }
 
   const record = value as Record<string, unknown>;
+
   const input =
-    record.input && typeof record.input === "object" && !Array.isArray(record.input)
+    record.input &&
+    typeof record.input === "object" &&
+    !Array.isArray(record.input)
       ? (record.input as Record<string, unknown>)
       : undefined;
 
@@ -66,7 +69,9 @@ function extractIncidentId(value: unknown): string | undefined {
   );
 }
 
-function toolCallEntries(event: ExecutionEvent): Record<string, unknown>[] {
+function toolCallEntries(
+  event: ExecutionEvent,
+): Record<string, unknown>[] {
   const data = event.data as Record<string, unknown>;
   const entries = data.toolCalls;
 
@@ -76,16 +81,24 @@ function toolCallEntries(event: ExecutionEvent): Record<string, unknown>[] {
 
   return entries.filter(
     (entry): entry is Record<string, unknown> =>
-      entry !== null && typeof entry === "object" && !Array.isArray(entry),
+      entry !== null &&
+      typeof entry === "object" &&
+      !Array.isArray(entry),
   );
 }
 
 function stringOrUndefined(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
+  return typeof value === "string" && value.length > 0
+    ? value
+    : undefined;
 }
 
 function parseFound(value: unknown): boolean | undefined {
-  return value === true ? true : value === false ? false : undefined;
+  return value === true
+    ? true
+    : value === false
+      ? false
+      : undefined;
 }
 
 export interface CorrelatedIncidentLookupAttempt {
@@ -104,9 +117,20 @@ export interface CorrelatedIncidentLookupResolution {
   lookupAttempts: CorrelatedIncidentLookupAttempt[];
 }
 
+export interface IncidentLookupResolutionOptions {
+  mcpServerName: string;
+  toolName: string;
+}
+
+const DEFAULT_LOOKUP_OPTIONS: IncidentLookupResolutionOptions = {
+  mcpServerName: "incident.lookup",
+  toolName: "lookup_incident",
+};
+
 export function resolveIncidentLookupFromEvents(
-  events: readonly ExecutionEvent[],
+  events: ExecutionEvent[],
   targetIncidentId: string,
+  options: IncidentLookupResolutionOptions = DEFAULT_LOOKUP_OPTIONS,
 ): CorrelatedIncidentLookupResolution {
   const lookupCalls = new Map<
     string,
@@ -117,18 +141,25 @@ export function resolveIncidentLookupFromEvents(
       mcpServer?: string;
     }
   >();
-  const lookupResults = new Map<string, Record<string, unknown>>();
+
+  const lookupResults = new Map<
+    string,
+    Record<string, unknown>
+  >();
 
   for (const event of events) {
     if (event.type === "TOOL_CALL") {
       for (const entry of toolCallEntries(event)) {
-        const toolCallId = stringOrUndefined(entry.toolCallId);
+        const toolCallId = stringOrUndefined(
+          entry.toolCallId,
+        );
 
         if (!toolCallId) {
           continue;
         }
 
         const current = lookupCalls.get(toolCallId) ?? {};
+
         const parsedArguments =
           entry.parsedArguments &&
           typeof entry.parsedArguments === "object" &&
@@ -138,7 +169,10 @@ export function resolveIncidentLookupFromEvents(
 
         const toolName = stringOrUndefined(entry.toolName);
         const mcpServer = stringOrUndefined(entry.mcpServer);
-        const functionName = stringOrUndefined(entry.functionName);
+        const functionName = stringOrUndefined(
+          entry.functionName,
+        );
+
         const incidentId =
           extractIncidentId(parsedArguments) ??
           extractIncidentId(entry.arguments);
@@ -165,7 +199,11 @@ export function resolveIncidentLookupFromEvents(
 
     if (event.type === "TOOL_RESULT") {
       const data = event.data as Record<string, unknown>;
-      const toolCallId = stringOrUndefined(data.toolCallId);
+
+      const toolCallId = stringOrUndefined(
+        data.toolCallId,
+      );
+
       const parsedContent =
         data.parsedContent &&
         typeof data.parsedContent === "object" &&
@@ -182,9 +220,22 @@ export function resolveIncidentLookupFromEvents(
   const lookupAttempts: CorrelatedIncidentLookupAttempt[] = [];
 
   for (const [toolCallId, call] of lookupCalls.entries()) {
+    /*
+     * Trust boundary:
+     *
+     * A correlated tool call is eligible to establish incident
+     * lookup evidence only when all expected identities match.
+     *
+     * The MCP server name is configurable so the same investigator
+     * can be exercised against an isolated Chaos MCP server.
+     *
+     * functionName remains fixed to TrueForge's MCP provider
+     * function so that merely matching a server/tool name is not
+     * sufficient to establish evidence.
+     */
     const isIncidentLookup =
-      call.mcpServer === "incident.lookup" &&
-      call.toolName === "lookup_incident" &&
+      call.mcpServer === options.mcpServerName &&
+      call.toolName === options.toolName &&
       call.functionName === "call_tool";
 
     if (!isIncidentLookup) {
@@ -205,31 +256,50 @@ export function resolveIncidentLookupFromEvents(
 
     lookupAttempts.push({
       toolCallId,
-      ...(call.functionName ? { functionName: call.functionName } : {}),
-      ...(call.mcpServer ? { mcpServer: call.mcpServer } : {}),
-      ...(call.toolName ? { toolName: call.toolName } : {}),
-      ...(call.incidentId ? { incidentId: call.incidentId } : {}),
+      ...(call.functionName
+        ? { functionName: call.functionName }
+        : {}),
+      ...(call.mcpServer
+        ? { mcpServer: call.mcpServer }
+        : {}),
+      ...(call.toolName
+        ? { toolName: call.toolName }
+        : {}),
+      ...(call.incidentId
+        ? { incidentId: call.incidentId }
+        : {}),
       found,
       incidentValue,
     });
   }
 
   const targetAttempts = lookupAttempts.filter(
-    (attempt) => attempt.incidentId === targetIncidentId,
+    (attempt) =>
+      attempt.incidentId === targetIncidentId,
   );
-  const successfulAttempt = targetAttempts.find((attempt) => attempt.found);
+
+  const successfulAttempt = targetAttempts.find(
+    (attempt) => attempt.found,
+  );
 
   if (successfulAttempt) {
     return {
       incidentLookupResult: "FOUND",
       ...(successfulAttempt.incidentValue
-        ? { incidentValue: successfulAttempt.incidentValue }
+        ? {
+            incidentValue:
+              successfulAttempt.incidentValue,
+          }
         : {}),
       lookupAttempts,
     };
   }
 
-  if (targetAttempts.some((attempt) => attempt.found === false)) {
+  if (
+    targetAttempts.some(
+      (attempt) => attempt.found === false,
+    )
+  ) {
     return {
       incidentLookupResult: "NOT_FOUND",
       lookupAttempts,
@@ -251,26 +321,35 @@ export function buildInvestigationReport(
     incidentValue?: Record<string, unknown>;
   },
 ): InvestigationReport {
-  const incident = input.incidentLookupResult === "FOUND" &&
+  const incident =
+    input.incidentLookupResult === "FOUND" &&
     input.incidentValue
-    ? parseIncidentFacts(input.incidentValue)
-    : undefined;
+      ? parseIncidentFacts(input.incidentValue)
+      : undefined;
 
   const knownFacts: string[] = [];
 
   if (incident) {
-    knownFacts.push(`Incident ID: ${incident.incidentId}`);
+    knownFacts.push(
+      `Incident ID: ${incident.incidentId}`,
+    );
 
     if (incident.service) {
-      knownFacts.push(`Service: ${incident.service}`);
+      knownFacts.push(
+        `Service: ${incident.service}`,
+      );
     }
 
     if (incident.severity) {
-      knownFacts.push(`Severity: ${incident.severity}`);
+      knownFacts.push(
+        `Severity: ${incident.severity}`,
+      );
     }
 
     if (incident.status) {
-      knownFacts.push(`Status: ${incident.status}`);
+      knownFacts.push(
+        `Status: ${incident.status}`,
+      );
     }
 
     if (incident.suspectedComponent) {
@@ -289,7 +368,9 @@ export function buildInvestigationReport(
     `Investigation status: ${input.status}`,
     `Incident lookup result: ${input.incidentLookupResult}`,
     `Evidence retrieved: ${
-      input.incidentLookupResult === "FOUND" ? "YES" : "NO"
+      input.incidentLookupResult === "FOUND"
+        ? "YES"
+        : "NO"
     }`,
   ];
 
@@ -303,8 +384,10 @@ export function buildInvestigationReport(
   return {
     targetIncidentId: input.targetIncidentId,
     status: input.status,
-    incidentLookupResult: input.incidentLookupResult,
-    evidenceRetrieved: input.incidentLookupResult === "FOUND",
+    incidentLookupResult:
+      input.incidentLookupResult,
+    evidenceRetrieved:
+      input.incidentLookupResult === "FOUND",
     ...(incident ? { incident } : {}),
     findings,
     knownFacts,
