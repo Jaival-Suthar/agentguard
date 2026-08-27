@@ -12,7 +12,15 @@ export interface ExecutionContractLimits {
 
 export interface ExecutionContractRequirements {
   verificationRequired: boolean;
+  requiredActions: string[];
   requiredEvidence: string[];
+}
+
+export interface ExecutionContractOrdering {
+  before: Array<{
+    action: string;
+    before: string;
+  }>;
 }
 
 export interface ExecutionContract {
@@ -22,4 +30,5 @@ export interface ExecutionContract {
   actions: ExecutionContractActions;
   limits: ExecutionContractLimits;
   requirements: ExecutionContractRequirements;
+  ordering: ExecutionContractOrdering;
 }

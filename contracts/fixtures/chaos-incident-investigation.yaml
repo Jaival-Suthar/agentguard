@@ -25,4 +25,6 @@ limits:
 
 requirements:
   verificationRequired: true
+  requiredActions:
+    - mcp:incident.lookup.chaos:lookup_incident
   requiredEvidence: []

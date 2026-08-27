@@ -9,28 +9,18 @@ import type {
 function highestVerdict(
   findings: readonly VerificationFinding[],
 ): VerificationVerdict {
-  if (
-    findings.some(
-      (finding) => finding.verdict === "FAIL",
-    )
-  ) {
+  if (findings.some((finding) => finding.verdict === "FAIL")) {
     return "FAIL";
   }
 
-  if (
-    findings.some(
-      (finding) => finding.verdict === "WARN",
-    )
-  ) {
+  if (findings.some((finding) => finding.verdict === "WARN")) {
     return "WARN";
   }
 
   return "PASS";
 }
 
-function actionSet(
-  values: readonly string[],
-): Set<string> {
+function actionSet(values: readonly string[]): Set<string> {
   return new Set(values);
 }
 
@@ -59,11 +49,64 @@ function approvedActionEventIds(
           observation.approved === true &&
           typeof observation.actionEventId === "string",
       )
-      .map(
-        (observation) =>
-          observation.actionEventId,
-      ),
+      .map((observation) => observation.actionEventId),
   );
+}
+
+/**
+ * Returns true when the declared ordering relationship is violated.
+ *
+ * Retry semantics:
+ * - The predecessor must be observed at least once.
+ * - The dependent action must be observed at least once.
+ * - At least one predecessor occurrence must precede the first
+ *   dependent-action occurrence.
+ *
+ * Therefore:
+ *
+ *   lookup -> sandbox -> sandbox     VALID
+ *   lookup -> sandbox                 VALID
+ *   sandbox -> lookup                 INVALID
+ *   sandbox -> sandbox -> lookup      INVALID
+ *
+ * A later retry cannot retroactively satisfy an ordering requirement
+ * that was already violated by the first dependent attempt.
+ */
+function hasOrderingViolation(
+  observations: readonly VerificationObservation[],
+  predecessor: string,
+  dependent: string,
+): boolean {
+  let predecessorObserved = false;
+  let dependentObserved = false;
+
+  for (const observation of observations) {
+    if (observation.kind !== "action") {
+      continue;
+    }
+
+    if (observation.action === predecessor) {
+      predecessorObserved = true;
+      continue;
+    }
+
+    if (observation.action === dependent) {
+      dependentObserved = true;
+
+      // The first dependent attempt happened before the required
+      // predecessor was observed.
+      if (!predecessorObserved) {
+        return true;
+      }
+    }
+  }
+
+  // Missing endpoints are handled by requiredActions independently.
+  if (!predecessorObserved || !dependentObserved) {
+    return false;
+  }
+
+  return false;
 }
 
 export function verifyObservations(
@@ -72,22 +115,23 @@ export function verifyObservations(
 ): VerificationReport {
   const findings: VerificationFinding[] = [];
 
-  const allowed = actionSet(
-    contract.actions.allow,
-  );
+  const allowed = actionSet(contract.actions.allow);
 
   const approvalRequired = actionSet(
     contract.actions.approvalRequired,
   );
 
-  const denied = actionSet(
-    contract.actions.deny,
-  );
+  const denied = actionSet(contract.actions.deny);
 
   const approvedActionEvents =
     approvedActionEventIds(observations);
 
   let outcomeObserved = false;
+
+  // Track action names independently from their individual policy findings.
+  // This lets trajectory requirements be enforced after the full ordered
+  // observation stream has been inspected.
+  const observedActions = new Set<string>();
 
   for (const observation of observations) {
     if (observation.kind === "action") {
@@ -104,6 +148,7 @@ export function verifyObservations(
       }
 
       const action = observation.action;
+      observedActions.add(action);
 
       if (denied.has(action)) {
         findings.push({
@@ -122,9 +167,7 @@ export function verifyObservations(
         const approved =
           observation.approved === true ||
           (!!observation.eventId &&
-            approvedActionEvents.has(
-              observation.eventId,
-            ));
+            approvedActionEvents.has(observation.eventId));
 
         if (approved) {
           findings.push({
@@ -177,9 +220,7 @@ export function verifyObservations(
     if (observation.kind === "retry") {
       if (
         typeof observation.retryCount !== "number" ||
-        !Number.isInteger(
-          observation.retryCount,
-        ) ||
+        !Number.isInteger(observation.retryCount) ||
         observation.retryCount < 0
       ) {
         findings.push({
@@ -224,14 +265,12 @@ export function verifyObservations(
 
       const missing =
         contract.requirements.requiredEvidence.filter(
-          (item) =>
-            !observedEvidence.has(item),
+          (item) => !observedEvidence.has(item),
         );
 
       if (missing.length > 0) {
         findings.push({
-          code:
-            "REQUIRED_EVIDENCE_MISSING",
+          code: "REQUIRED_EVIDENCE_MISSING",
           verdict: "FAIL",
           message:
             `Required evidence is missing: ${missing.join(", ")}.`,
@@ -239,8 +278,7 @@ export function verifyObservations(
         });
       } else {
         findings.push({
-          code:
-            "REQUIRED_EVIDENCE_PRESENT",
+          code: "REQUIRED_EVIDENCE_PRESENT",
           verdict: "PASS",
           message:
             "All required evidence was observed.",
@@ -255,8 +293,7 @@ export function verifyObservations(
       outcomeObserved = true;
 
       if (
-        contract.requirements
-          .verificationRequired &&
+        contract.requirements.verificationRequired &&
         observation.outcomeVerified !== true
       ) {
         findings.push({
@@ -314,9 +351,71 @@ export function verifyObservations(
     });
   }
 
+  // Every declared required action must occur at least once.
+  for (const requiredAction of contract.requirements.requiredActions) {
+    if (!observedActions.has(requiredAction)) {
+      findings.push({
+        code: "REQUIRED_ACTION_MISSING",
+        verdict: "FAIL",
+        message:
+          `Required action "${requiredAction}" was not observed in the trajectory.`,
+        action: requiredAction,
+      });
+    } else {
+      findings.push({
+        code: "REQUIRED_ACTION_PRESENT",
+        verdict: "PASS",
+        message:
+          `Required action "${requiredAction}" was observed in the trajectory.`,
+        action: requiredAction,
+      });
+    }
+  }
+
+  // Enforce every declared ordering relationship against the actual
+  // chronological action stream.
+  //
+  // Repeated dependent actions are valid retries only when the predecessor
+  // was already observed before the first dependent attempt.
+  for (const relationship of contract.ordering.before) {
+    const violation = hasOrderingViolation(
+      observations,
+      relationship.action,
+      relationship.before,
+    );
+
+    if (violation) {
+      findings.push({
+        code: "ORDERING_VIOLATION",
+        verdict: "FAIL",
+        message:
+          `Action "${relationship.action}" must occur before "${relationship.before}", but the dependent action was observed before its required predecessor.`,
+        action: relationship.action,
+      });
+      continue;
+    }
+
+    const observedPredecessor = observedActions.has(
+      relationship.action,
+    );
+
+    const observedDependent = observedActions.has(
+      relationship.before,
+    );
+
+    if (observedPredecessor && observedDependent) {
+      findings.push({
+        code: "ORDERING_SATISFIED",
+        verdict: "PASS",
+        message:
+          `Action "${relationship.action}" occurred before "${relationship.before}" as required by the execution contract.`,
+        action: relationship.action,
+      });
+    }
+  }
+
   if (
-    contract.requirements
-      .verificationRequired &&
+    contract.requirements.verificationRequired &&
     !outcomeObserved
   ) {
     findings.push({
@@ -328,25 +427,21 @@ export function verifyObservations(
   }
 
   const passed = findings.filter(
-    (finding) =>
-      finding.verdict === "PASS",
+    (finding) => finding.verdict === "PASS",
   ).length;
 
   const warnings = findings.filter(
-    (finding) =>
-      finding.verdict === "WARN",
+    (finding) => finding.verdict === "WARN",
   ).length;
 
   const failures = findings.filter(
-    (finding) =>
-      finding.verdict === "FAIL",
+    (finding) => finding.verdict === "FAIL",
   ).length;
 
   return {
     verdict: highestVerdict(findings),
     findings,
-    observationsEvaluated:
-      observations.length,
+    observationsEvaluated: observations.length,
     passed,
     warnings,
     failures,
