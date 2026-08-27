@@ -16,14 +16,23 @@ export type ObservationKind =
 
 export interface VerificationObservation {
   kind: ObservationKind;
+
   action?: string;
+
   approved?: boolean;
+
   retryCount?: number;
+
   evidence?: string[];
+
   outcomeVerified?: boolean;
+
   eventId?: string;
+
   actionEventId?: string;
+
   timestamp?: string;
+
   data?: Record<string, unknown>;
 }
 
@@ -37,6 +46,10 @@ export interface VerificationFinding {
     | "RETRY_WITHIN_LIMIT"
     | "REQUIRED_EVIDENCE_MISSING"
     | "REQUIRED_EVIDENCE_PRESENT"
+    | "REQUIRED_ACTION_MISSING"
+    | "REQUIRED_ACTION_PRESENT"
+    | "ORDERING_VIOLATION"
+    | "ORDERING_SATISFIED"
     | "OUTCOME_UNVERIFIED"
     | "OUTCOME_MISSING"
     | "OUTCOME_VERIFIED"
@@ -44,17 +57,26 @@ export interface VerificationFinding {
     | "EXPECTED_CHAOS_ACTION_MISSING"
     | "EXPECTED_CHAOS_OUTCOME_MISSING"
     | "MALFORMED_OBSERVATION";
+
   verdict: VerificationVerdict;
+
   message: string;
+
   action?: string;
+
   eventId?: string;
 }
 
 export interface VerificationReport {
   verdict: VerificationVerdict;
+
   findings: VerificationFinding[];
+
   observationsEvaluated: number;
+
   passed: number;
+
   warnings: number;
+
   failures: number;
 }

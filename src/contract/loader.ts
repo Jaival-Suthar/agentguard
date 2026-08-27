@@ -70,11 +70,15 @@ function readOrdering(
     const before = item.before;
 
     if (typeof action !== "string" || action.trim().length === 0) {
-      throw new Error(`ordering.before[${index}].action must be a non-empty string`);
+      throw new Error(
+        `ordering.before[${index}].action must be a non-empty string`,
+      );
     }
 
     if (typeof before !== "string" || before.trim().length === 0) {
-      throw new Error(`ordering.before[${index}].before must be a non-empty string`);
+      throw new Error(
+        `ordering.before[${index}].before must be a non-empty string`,
+      );
     }
 
     const normalizedAction = action.trim();
@@ -93,13 +97,16 @@ function readOrdering(
   });
 
   const seen = new Set<string>();
+
   for (const pair of pairs) {
     const key = `${pair.action}\u0000${pair.before}`;
+
     if (seen.has(key)) {
       throw new Error(
         `ordering.before must not contain duplicate relationship "${pair.action}" before "${pair.before}"`,
       );
     }
+
     seen.add(key);
   }
 
@@ -212,41 +219,64 @@ export function parseExecutionContract(text: string): ExecutionContract {
     "requirements.requiredActions",
   );
 
-  const declaredActions = new Set([
+  // Trajectory requirements can only target actions that are
+  // executable or approval-gated. A denied action can never
+  // simultaneously be a required successful trajectory action.
+  const trajectoryActions = new Set([
     ...allow,
     ...approvalRequired,
-    ...deny,
   ]);
 
   for (const action of requiredActions) {
-    if (!declaredActions.has(action)) {
+    if (!trajectoryActions.has(action)) {
+      if (deny.includes(action)) {
+        throw new Error(
+          `Required action "${action}" cannot be denied; required trajectory actions must be declared in actions.allow or actions.approvalRequired`,
+        );
+      }
+
       throw new Error(
-        `Required action "${action}" must be declared in actions.allow, actions.approvalRequired, or actions.deny`,
+        `Required action "${action}" must be declared in actions.allow or actions.approvalRequired`,
       );
     }
   }
 
   const orderingRoot = parsed.ordering;
-  const ordering = orderingRoot === undefined
-    ? { before: [] }
-    : requiredRecord(parsed, "ordering");
+  const ordering =
+    orderingRoot === undefined
+      ? { before: [] }
+      : requiredRecord(parsed, "ordering");
+
   const before = readOrdering(ordering.before);
 
   for (const relationship of before) {
-    if (!declaredActions.has(relationship.action)) {
+    if (!trajectoryActions.has(relationship.action)) {
+      if (deny.includes(relationship.action)) {
+        throw new Error(
+          `Ordering action "${relationship.action}" cannot be denied; ordering endpoints must be declared in actions.allow or actions.approvalRequired`,
+        );
+      }
+
       throw new Error(
-        `Ordering action "${relationship.action}" must be declared in the execution contract`,
+        `Ordering action "${relationship.action}" must be declared in actions.allow or actions.approvalRequired`,
       );
     }
 
-    if (!declaredActions.has(relationship.before)) {
+    if (!trajectoryActions.has(relationship.before)) {
+      if (deny.includes(relationship.before)) {
+        throw new Error(
+          `Ordering action "${relationship.before}" cannot be denied; ordering endpoints must be declared in actions.allow or actions.approvalRequired`,
+        );
+      }
+
       throw new Error(
-        `Ordering action "${relationship.before}" must be declared in the execution contract`,
+        `Ordering action "${relationship.before}" must be declared in actions.allow or actions.approvalRequired`,
       );
     }
   }
 
   const graph = new Map<string, string[]>();
+
   for (const relationship of before) {
     const edges = graph.get(relationship.action) ?? [];
     edges.push(relationship.before);
@@ -258,7 +288,9 @@ export function parseExecutionContract(text: string): ExecutionContract {
 
   function visit(action: string): void {
     if (visiting.has(action)) {
-      throw new Error("ordering.before must not contain cyclic relationships");
+      throw new Error(
+        "ordering.before must not contain cyclic relationships",
+      );
     }
 
     if (visited.has(action)) {
@@ -266,9 +298,11 @@ export function parseExecutionContract(text: string): ExecutionContract {
     }
 
     visiting.add(action);
+
     for (const next of graph.get(action) ?? []) {
       visit(next);
     }
+
     visiting.delete(action);
     visited.add(action);
   }
