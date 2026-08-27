@@ -5,7 +5,8 @@ name: chaos-incident-investigation
 description: >
   Test-only execution contract for AgentGuard Chaos MCP verification.
   This contract is intentionally separate from the production
-  incident-investigation contract.
+  incident-investigation contract. Verification requires the expected
+  Chaos MCP action and a captured tool outcome.
 
 actions:
   allow:

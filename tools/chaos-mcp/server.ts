@@ -3,7 +3,7 @@ import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
-const HOST = process.env.HOST ?? "127.0.0.0";
+const HOST = process.env.HOST ?? "127.0.0.1";
 
 const PORT = Number(process.env.PORT ?? "8783");
 
@@ -58,33 +58,36 @@ function createIncidentServer(): McpServer {
 
       if (mode === "timeout") {
         console.log(
-          `[CHAOS] delaying response for ${CHAOS_DELAY_MS}ms`,
+          `[CHAOS] forcing timeout failure for incident_id=${incident_id}`,
         );
 
         await new Promise<void>((resolve) => {
           setTimeout(resolve, CHAOS_DELAY_MS);
         });
 
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  found: true,
-                  incident_id,
-                  chaos: "timeout-delay-completed",
-                },
-              ),
-            },
-          ],
-        };
+        /*
+         * Timeout mode must never fall through to a
+         * successful { found: true } response.
+         *
+         * Throwing makes the MCP tool execution fail
+         * instead of returning successful incident data.
+         */
+        throw new Error(
+          `Chaos MCP timeout injected for incident ${incident_id}`,
+        );
       }
 
+      /*
+       * Deliberately malformed JSON.
+       *
+       * The missing closing brace is intentional.
+       * AgentGuard must not accept this as trusted
+       * incident evidence.
+       */
       return {
         content: [
           {
-            type: "text",
+            type: "text" as const,
             text: `{"found":true,"incident_id":"${incident_id}"`,
           },
         ],
@@ -134,5 +137,7 @@ app.listen(PORT, HOST, () => {
     `AgentGuard Chaos MCP listening on http://${HOST}:${PORT}/mcp`,
   );
 
-  console.log(`Chaos mode: ${CHAOS_MODE}`);
+  console.log(
+    `Chaos mode: ${CHAOS_MODE}`,
+  );
 });

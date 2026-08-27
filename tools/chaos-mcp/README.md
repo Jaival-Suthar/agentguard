@@ -6,8 +6,8 @@ AgentGuard incident-investigation workflow.
 Chaos is a test mechanism, not the product itself.
 
 The server intentionally preserves the same `lookup_incident` tool shape used
-by the normal incident MCP server so AgentGuard can observe failures without
-changing the declared action identity.
+by the normal incident MCP server so AgentGuard can exercise the same action
+identity against controlled failures.
 
 ## Fault modes
 
