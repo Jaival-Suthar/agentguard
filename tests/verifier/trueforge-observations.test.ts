@@ -588,3 +588,79 @@ test(
     assert.equal(observations[1]?.actionEventId, "sandbox-message-1");
   },
 );
+
+test(
+  "preserves the requested incident ID from MCP tool arguments",
+  () => {
+    const observations = normalizeTrueForgeObservations([
+      {
+        id: "message-requested-incident",
+        type: "model.message.delta",
+        toolCalls: [
+          {
+            id: "call-requested-incident",
+            index: 0,
+            type: "function",
+            function: {
+              name: "call_tool",
+              arguments: JSON.stringify({
+                input: { incident_id: "INC-042" },
+                mcp_server: "incident.lookup",
+                tool_name: "lookup_incident",
+              }),
+            },
+          },
+        ],
+      },
+    ]);
+
+    assert.equal(observations.length, 1);
+    assert.deepEqual(observations[0]?.data, {
+      requestedIncidentId: "INC-042",
+    });
+  },
+);
+
+test(
+  "does not merge distinct ID-less provider events at the same index",
+  () => {
+    const observations = normalizeTrueForgeObservations([
+      {
+        type: "model.message.delta",
+        toolCalls: [
+          {
+            index: 0,
+            type: "function",
+            function: {
+              name: "exec",
+              arguments: JSON.stringify({
+                command: "python analysis-a.py",
+              }),
+            },
+          },
+        ],
+      },
+      {
+        type: "model.message.delta",
+        toolCalls: [
+          {
+            index: 0,
+            type: "function",
+            function: {
+              name: "exec",
+              arguments: JSON.stringify({
+                command: "python analysis-b.py",
+              }),
+            },
+          },
+        ],
+      },
+    ]);
+
+    assert.equal(observations.length, 2);
+    assert.equal(observations[0]?.kind, "action");
+    assert.equal(observations[1]?.kind, "action");
+    assert.equal(observations[0]?.action, "sandbox:execute");
+    assert.equal(observations[1]?.action, "sandbox:execute");
+  },
+);

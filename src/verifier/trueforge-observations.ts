@@ -44,6 +44,7 @@ type PendingToolCall = {
   action?: string;
   emitted?: boolean;
   outcomeObserved?: boolean;
+  requestedIncidentId?: string;
 };
 
 function isRecord(
@@ -345,19 +346,20 @@ export function normalizeTrueForgeObservations(
          * We never search another event's state.
          */
         if (!state && !incomingToolCallId) {
-          const eventKey =
-            keys[0];
+          const eventId = stringValue(event.id);
 
-          if (eventKey) {
-            const candidate =
-              pendingToolCalls.get(eventKey);
+          // An ID-less provider event has no stable identity that can
+          // safely reconnect it to prior state. Only an explicit event ID
+          // may reconnect a delta to an existing pending call.
+          if (eventId) {
+            const eventKey = keys[0];
 
-            if (
-              candidate &&
-              candidate.eventId ===
-                stringValue(event.id)
-            ) {
-              state = candidate;
+            if (eventKey) {
+              const candidate = pendingToolCalls.get(eventKey);
+
+              if (candidate?.eventId === eventId) {
+                state = candidate;
+              }
             }
           }
         }
@@ -403,6 +405,11 @@ export function normalizeTrueForgeObservations(
               ?.tool_name,
           );
 
+        const requestedIncidentId =
+          isRecord(argumentsValue?.input)
+            ? stringValue(argumentsValue.input.incident_id)
+            : undefined;
+
         if (mcpServer) {
           state.mcpServer =
             mcpServer;
@@ -411,6 +418,11 @@ export function normalizeTrueForgeObservations(
         if (toolName) {
           state.toolName =
             toolName;
+        }
+
+        if (requestedIncidentId) {
+          state.requestedIncidentId =
+            requestedIncidentId;
         }
 
         const eventId =
@@ -462,6 +474,14 @@ export function normalizeTrueForgeObservations(
               ? {
                   eventId:
                     state.eventId,
+                }
+              : {}),
+            ...(state.requestedIncidentId
+              ? {
+                  data: {
+                    requestedIncidentId:
+                      state.requestedIncidentId,
+                  },
                 }
               : {}),
           });

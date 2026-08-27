@@ -37,7 +37,7 @@ PASS / WARN / FAIL
 ## CLI
 
 ```text
-npm run verify:evidence -- data\\runs\\<run-id>.jsonl INC-042
+npm run verify:evidence -- data/runs/<run-id>.jsonl INC-042
 ```
 
 The command exits with code `1` for `FAIL` and `0` for `PASS` or `WARN`.

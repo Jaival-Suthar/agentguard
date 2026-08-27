@@ -12,7 +12,7 @@ const targetIncidentId = process.argv[3] ?? "INC-042";
 
 if (!evidencePath) {
   throw new Error(
-    "Usage: npm run verify:evidence -- data\\runs\\<run-id>.jsonl [INC-042]",
+    "Usage: npm run verify:evidence -- data/runs/<run-id>.jsonl [INC-042]",
   );
 }
 

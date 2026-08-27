@@ -30,6 +30,14 @@ export interface EvidenceVerificationOptions {
   requireSandboxAnalysis?: boolean;
 }
 
+const INCIDENT_FIELDS = [
+  "incident_id",
+  "service",
+  "severity",
+  "status",
+  "suspected_component",
+] as const;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -43,14 +51,8 @@ function stringValue(value: unknown): string | undefined {
 function highestVerdict(
   findings: readonly VerificationFinding[],
 ): VerificationVerdict {
-  if (findings.some((finding) => finding.verdict === "FAIL")) {
-    return "FAIL";
-  }
-
-  if (findings.some((finding) => finding.verdict === "WARN")) {
-    return "WARN";
-  }
-
+  if (findings.some((finding) => finding.verdict === "FAIL")) return "FAIL";
+  if (findings.some((finding) => finding.verdict === "WARN")) return "WARN";
   return "PASS";
 }
 
@@ -95,17 +97,12 @@ function successfulSandboxResult(
   const content = parsedContent(observation);
   const response = content?.response;
 
-  if (!isRecord(response) || response.exitCode !== 0) {
-    return undefined;
-  }
+  if (!isRecord(response) || response.exitCode !== 0) return undefined;
 
-  const result = response.result;
-  if (typeof result !== "string") {
-    return undefined;
-  }
+  if (typeof response.result !== "string") return undefined;
 
   try {
-    const parsed: unknown = JSON.parse(result);
+    const parsed: unknown = JSON.parse(response.result);
     return isRecord(parsed) ? parsed : undefined;
   } catch {
     return undefined;
@@ -116,36 +113,56 @@ function incidentFromMcpOutcome(
   observation: VerificationObservation,
 ): Record<string, unknown> | undefined {
   const content = parsedContent(observation);
-
-  if (!content || content.found !== true) {
-    return undefined;
-  }
-
+  if (!content || content.found !== true) return undefined;
   return content;
 }
 
-function requiredIncidentFields(
-  value: Record<string, unknown>,
-): string[] {
-  return [
-    "incident_id",
-    "service",
-    "severity",
-    "status",
-    "suspected_component",
-  ].filter((field) => stringValue(value[field]) !== undefined);
+function missingIncidentFields(value: Record<string, unknown>): string[] {
+  return INCIDENT_FIELDS.filter(
+    (field) => stringValue(value[field]) === undefined,
+  );
 }
 
-function missingIncidentFields(
-  value: Record<string, unknown>,
-): string[] {
-  return [
-    "incident_id",
-    "service",
-    "severity",
-    "status",
-    "suspected_component",
-  ].filter((field) => stringValue(value[field]) === undefined);
+function requiredIncidentFields(value: Record<string, unknown>): string[] {
+  return INCIDENT_FIELDS.filter(
+    (field) => stringValue(value[field]) !== undefined,
+  );
+}
+
+function requestedIncidentId(action: VerificationObservation): string | undefined {
+  return stringValue(action.data?.requestedIncidentId);
+}
+
+function actionHasSuccessfulOutcome(
+  action: VerificationObservation,
+  outcomes: Map<string, VerificationObservation[]>,
+): boolean {
+  if (!action.eventId) return false;
+
+  return (outcomes.get(action.eventId) ?? []).some((outcome) => {
+    if (outcome.outcomeVerified !== true) return false;
+    if (action.action === "sandbox:execute") {
+      return successfulSandboxResult(outcome) !== undefined;
+    }
+    return true;
+  });
+}
+
+function laterSuccessfulRetryExists(
+  actionIndex: number,
+  action: VerificationObservation,
+  actions: readonly VerificationObservation[],
+  outcomes: Map<string, VerificationObservation[]>,
+): boolean {
+  if (!action.action) return false;
+
+  for (let index = actionIndex + 1; index < actions.length; index += 1) {
+    const candidate = actions[index];
+    if (candidate?.action !== action.action) continue;
+    if (actionHasSuccessfulOutcome(candidate, outcomes)) return true;
+  }
+
+  return false;
 }
 
 export function verifyExecutionEvidence(
@@ -156,7 +173,6 @@ export function verifyExecutionEvidence(
   const findings: VerificationFinding[] = [];
   const evidence: VerifiedEvidence[] = [];
   const outcomes = outcomeByActionEventId(observations);
-
   const targetIncidentId = options.targetIncidentId?.trim();
   const requireSandboxAnalysis =
     options.requireSandboxAnalysis ??
@@ -174,7 +190,12 @@ export function verifyExecutionEvidence(
     });
   }
 
-  for (const action of actions) {
+  /*
+   * Each attempt is evaluated independently, but a failed attempt is not
+   * fatal when a later attempt of the same action succeeds. Retry limits are
+   * enforced separately by the execution-contract verifier.
+   */
+  for (const [actionIndex, action] of actions.entries()) {
     if (!action.action) {
       addFinding(findings, {
         code: "MALFORMED_OBSERVATION",
@@ -198,39 +219,19 @@ export function verifyExecutionEvidence(
     }
 
     const correlatedOutcomes = outcomes.get(actionEventId) ?? [];
-
-    if (correlatedOutcomes.length === 0) {
-      addFinding(findings, {
-        code: "OUTCOME_MISSING",
-        verdict: "FAIL",
-        message:
-          `Action "${action.action}" has no correlated tool outcome.`,
-        action: action.action,
-        eventId: actionEventId,
-      });
-      continue;
-    }
-
-    const verifiedOutcome = correlatedOutcomes.find(
-      (outcome) => {
-        if (outcome.outcomeVerified !== true) {
-          return false;
-        }
-
-        // Sandbox execution is only successful evidence when the
-        // tool response itself proves a successful deterministic run.
-        // A parseable error response (for example exitCode !== 0) is
-        // verified as an observed outcome, but it is not successful
-        // sandbox-analysis evidence.
-        if (action.action === "sandbox:execute") {
-          return successfulSandboxResult(outcome) !== undefined;
-        }
-
-        return true;
-      },
-    );
+    const verifiedOutcome = correlatedOutcomes.find((outcome) => {
+      if (outcome.outcomeVerified !== true) return false;
+      if (action.action === "sandbox:execute") {
+        return successfulSandboxResult(outcome) !== undefined;
+      }
+      return true;
+    });
 
     if (!verifiedOutcome) {
+      if (laterSuccessfulRetryExists(actionIndex, action, actions, outcomes)) {
+        continue;
+      }
+
       const hasVerifiedRuntimeOutcome = correlatedOutcomes.some(
         (outcome) => outcome.outcomeVerified === true,
       );
@@ -245,265 +246,205 @@ export function verifyExecutionEvidence(
         action: action.action,
         eventId: actionEventId,
       });
-    } else {
-      addFinding(findings, {
-        code: "OUTCOME_VERIFIED",
-        verdict: "PASS",
-        message:
-          `Action "${action.action}" has a correlated verified runtime outcome.`,
-        action: action.action,
-        eventId: verifiedOutcome.eventId ?? actionEventId,
-      });
-
-      evidence.push({
-        type: "tool_outcome",
-        source: "runtime",
-        actionEventId,
-        ...(verifiedOutcome.eventId
-          ? { outcomeEventId: verifiedOutcome.eventId }
-          : {}),
-        fields: ["correlation", "parseable_outcome"],
-        details: {
-          action: action.action,
-          ...(verifiedOutcome.data?.toolCallId
-            ? { toolCallId: verifiedOutcome.data.toolCallId }
-            : {}),
-          ...(verifiedOutcome.data?.toolResultError === true
-            ? { toolResultError: true }
-            : {}),
-        },
-      });
+      continue;
     }
+
+    addFinding(findings, {
+      code: "OUTCOME_VERIFIED",
+      verdict: "PASS",
+      message: `Action "${action.action}" has a correlated verified runtime outcome.`,
+      action: action.action,
+      eventId: verifiedOutcome.eventId ?? actionEventId,
+    });
+
+    evidence.push({
+      type: "tool_outcome",
+      source: "runtime",
+      actionEventId,
+      ...(verifiedOutcome.eventId
+        ? { outcomeEventId: verifiedOutcome.eventId }
+        : {}),
+      fields: ["correlation", "parseable_outcome"],
+      details: {
+        action: action.action,
+        ...(verifiedOutcome.data?.toolCallId
+          ? { toolCallId: verifiedOutcome.data.toolCallId }
+          : {}),
+        ...(verifiedOutcome.data?.toolResultError === true
+          ? { toolResultError: true }
+          : {}),
+      },
+    });
   }
 
-  const mcpAction = actions.find(
+  const mcpActions = actions.filter(
     (observation) =>
       observation.action === "mcp:incident.lookup:lookup_incident",
   );
 
   let mcpIncident: Record<string, unknown> | undefined;
+  let mcpAction: VerificationObservation | undefined;
+  let mcpOutcome: VerificationObservation | undefined;
 
-  if (!mcpAction?.eventId) {
+  for (const candidateAction of mcpActions) {
+    if (!candidateAction.eventId) continue;
+
+    const requestedId = requestedIncidentId(candidateAction);
+    if (targetIncidentId && requestedId !== targetIncidentId) continue;
+
+    const candidateOutcome = (outcomes.get(candidateAction.eventId) ?? []).find(
+      (outcome) => outcome.outcomeVerified === true,
+    );
+    if (!candidateOutcome) continue;
+
+    const candidateIncident = incidentFromMcpOutcome(candidateOutcome);
+    if (!candidateIncident) continue;
+
+    const missing = missingIncidentFields(candidateIncident);
+    if (missing.length > 0) continue;
+
+    const observedIncidentId = stringValue(candidateIncident.incident_id);
+    if (targetIncidentId && observedIncidentId !== targetIncidentId) continue;
+
+    mcpAction = candidateAction;
+    mcpOutcome = candidateOutcome;
+    mcpIncident = candidateIncident;
+    break;
+  }
+
+  if (!mcpAction?.eventId || !mcpIncident || !mcpOutcome) {
     addFinding(findings, {
       code: "REQUIRED_EVIDENCE_MISSING",
       verdict: "FAIL",
       message:
-        "Trusted incident lookup evidence is missing from the trajectory.",
+        targetIncidentId
+          ? "Trusted incident lookup evidence is missing a verified lookup action that explicitly requested the target incident and returned complete matching evidence."
+          : "Trusted incident lookup evidence is missing from the trajectory.",
     });
   } else {
-    const candidate = (outcomes.get(mcpAction.eventId) ?? []).find(
-      (outcome) => outcome.outcomeVerified === true,
-    );
+    const observedIncidentId = stringValue(mcpIncident.incident_id);
+    const missing = missingIncidentFields(mcpIncident);
 
-    mcpIncident = candidate
-      ? incidentFromMcpOutcome(candidate)
-      : undefined;
-
-    if (!mcpIncident) {
+    if (missing.length > 0) {
       addFinding(findings, {
         code: "REQUIRED_EVIDENCE_MISSING",
         verdict: "FAIL",
         message:
-          "The trusted incident lookup did not produce a verified FOUND result.",
+          `Incident lookup evidence is incomplete; missing fields: ${missing.join(", ")}.`,
         ...(mcpAction.action ? { action: mcpAction.action } : {}),
-        eventId: candidate?.eventId ?? mcpAction.eventId,
+        eventId: mcpOutcome.eventId ?? mcpAction.eventId,
+      });
+    } else if (targetIncidentId && observedIncidentId !== targetIncidentId) {
+      addFinding(findings, {
+        code: "REQUIRED_EVIDENCE_MISSING",
+        verdict: "FAIL",
+        message:
+          `Incident lookup returned "${observedIncidentId ?? "unknown"}" but the requested incident is "${targetIncidentId}".`,
+        ...(mcpAction.action ? { action: mcpAction.action } : {}),
+        eventId: mcpOutcome.eventId ?? mcpAction.eventId,
       });
     } else {
-      const missing = missingIncidentFields(mcpIncident);
+      addFinding(findings, {
+        code: "REQUIRED_EVIDENCE_PRESENT",
+        verdict: "PASS",
+        message:
+          "Trusted incident lookup evidence is complete and independently verified.",
+        ...(mcpAction.action ? { action: mcpAction.action } : {}),
+        eventId: mcpOutcome.eventId ?? mcpAction.eventId,
+      });
 
-      if (missing.length > 0) {
-        addFinding(findings, {
-          code: "REQUIRED_EVIDENCE_MISSING",
-          verdict: "FAIL",
-          message:
-            `Incident lookup evidence is incomplete; missing fields: ${missing.join(", ")}.`,
-          ...(mcpAction.action ? { action: mcpAction.action } : {}),
-          eventId: candidate?.eventId ?? mcpAction.eventId,
-        });
-      } else {
-        const observedIncidentId = stringValue(mcpIncident.incident_id);
-
-        if (targetIncidentId && observedIncidentId !== targetIncidentId) {
-          addFinding(findings, {
-            code: "REQUIRED_EVIDENCE_MISSING",
-            verdict: "FAIL",
-            message:
-              `Incident lookup returned "${observedIncidentId ?? "unknown"}" but the requested incident is "${targetIncidentId}".`,
-            ...(mcpAction.action ? { action: mcpAction.action } : {}),
-            eventId: candidate?.eventId ?? mcpAction.eventId,
-          });
-        } else {
-          addFinding(findings, {
-            code: "REQUIRED_EVIDENCE_PRESENT",
-            verdict: "PASS",
-            message:
-              "Trusted incident lookup evidence is complete and independently verified.",
-            ...(mcpAction.action ? { action: mcpAction.action } : {}),
-            eventId: candidate?.eventId ?? mcpAction.eventId,
-          });
-
-          evidence.push({
-            type: "mcp_incident",
-            source: "mcp",
-            actionEventId: mcpAction.eventId,
-            ...(candidate?.eventId
-              ? { outcomeEventId: candidate.eventId }
-              : {}),
-            ...(observedIncidentId
-              ? { incidentId: observedIncidentId }
-              : {}),
-            fields: requiredIncidentFields(mcpIncident),
-            details: {
-              found: true,
-              service: mcpIncident.service,
-              severity: mcpIncident.severity,
-              status: mcpIncident.status,
-              suspected_component: mcpIncident.suspected_component,
-            },
-          });
-        }
-      }
+      evidence.push({
+        type: "mcp_incident",
+        source: "mcp",
+        actionEventId: mcpAction.eventId,
+        ...(mcpOutcome.eventId ? { outcomeEventId: mcpOutcome.eventId } : {}),
+        ...(observedIncidentId ? { incidentId: observedIncidentId } : {}),
+        fields: requiredIncidentFields(mcpIncident),
+        details: {
+          found: true,
+          requestedIncidentId: requestedIncidentId(mcpAction),
+          service: mcpIncident.service,
+          severity: mcpIncident.severity,
+          status: mcpIncident.status,
+          suspected_component: mcpIncident.suspected_component,
+        },
+      });
     }
   }
 
-  const sandboxAction = actions.find(
+  const sandboxActions = actions.filter(
     (observation) => observation.action === "sandbox:execute",
   );
-
   let sandboxEvidenceVerified = false;
 
   if (requireSandboxAnalysis) {
-    if (!sandboxAction?.eventId) {
+    for (const sandboxAction of sandboxActions) {
+      if (!sandboxAction.eventId) continue;
+
+      const sandboxOutcome = (outcomes.get(sandboxAction.eventId) ?? []).find(
+        (outcome) =>
+          outcome.outcomeVerified === true &&
+          successfulSandboxResult(outcome) !== undefined,
+      );
+      if (!sandboxOutcome) continue;
+
+      const sandboxResult = successfulSandboxResult(sandboxOutcome);
+      if (!sandboxResult || !mcpIncident || !mcpAction) continue;
+
+      const sandboxIncidentRecord = isRecord(sandboxResult.incident)
+        ? sandboxResult.incident
+        : undefined;
+      const candidate = stringValue(sandboxResult.root_cause_candidate);
+      const suspectedComponent = stringValue(mcpIncident.suspected_component);
+      const sandboxIncidentId = stringValue(sandboxIncidentRecord?.incident_id);
+      const missing = sandboxIncidentRecord
+        ? missingIncidentFields(sandboxIncidentRecord)
+        : ["incident"];
+
+      if (missing.length > 0) continue;
+      if (!sandboxIncidentId || sandboxIncidentId !== stringValue(mcpIncident.incident_id)) continue;
+      if (targetIncidentId && sandboxIncidentId !== targetIncidentId) continue;
+      if (!candidate || !suspectedComponent || candidate !== suspectedComponent) continue;
+
+      sandboxEvidenceVerified = true;
+
+      addFinding(findings, {
+        code: "REQUIRED_EVIDENCE_PRESENT",
+        verdict: "PASS",
+        message:
+          "Deterministic sandbox evidence matches the trusted MCP incident evidence and establishes the root-cause candidate without relying on model narrative.",
+        action: "sandbox:execute",
+        eventId: sandboxOutcome.eventId ?? sandboxAction.eventId,
+      });
+
+      evidence.push({
+        type: "sandbox_analysis",
+        source: "sandbox",
+        actionEventId: sandboxAction.eventId,
+        ...(sandboxOutcome.eventId ? { outcomeEventId: sandboxOutcome.eventId } : {}),
+        incidentId: sandboxIncidentId,
+        fields: [
+          "successful_execution",
+          "incident_identity_match",
+          "root_cause_candidate_match",
+        ],
+        details: {
+          exitCode: 0,
+          root_cause_candidate: candidate,
+          suspected_component: suspectedComponent,
+        },
+      });
+      break;
+    }
+
+    if (!sandboxEvidenceVerified) {
       addFinding(findings, {
         code: "REQUIRED_EVIDENCE_MISSING",
         verdict: "FAIL",
         message:
-          "Deterministic sandbox analysis is required for root_cause evidence, but no sandbox execution was observed.",
+          "Sandbox execution did not produce a verified successful analysis result.",
+        action: "sandbox:execute",
       });
-    } else {
-      const sandboxOutcome = (outcomes.get(sandboxAction.eventId) ?? []).find(
-        (outcome) => outcome.outcomeVerified === true,
-      );
-      const sandboxResult = sandboxOutcome
-        ? successfulSandboxResult(sandboxOutcome)
-        : undefined;
-
-      if (!sandboxResult) {
-        addFinding(findings, {
-          code: "REQUIRED_EVIDENCE_MISSING",
-          verdict: "FAIL",
-          message:
-            "Sandbox execution did not produce a verified successful analysis result.",
-          ...(sandboxAction.action ? { action: sandboxAction.action } : {}),
-          eventId: sandboxOutcome?.eventId ?? sandboxAction.eventId,
-        });
-      } else {
-        const sandboxIncident = sandboxResult.incident;
-        const sandboxIncidentRecord = isRecord(sandboxIncident)
-          ? sandboxIncident
-          : undefined;
-        const candidate = stringValue(sandboxResult.root_cause_candidate);
-        const suspectedComponent = stringValue(
-          mcpIncident?.suspected_component,
-        );
-        const sandboxIncidentId = stringValue(
-          sandboxIncidentRecord?.incident_id,
-        );
-
-        const missing = sandboxIncidentRecord
-          ? missingIncidentFields(sandboxIncidentRecord)
-          : ["incident"];
-
-        if (missing.length > 0) {
-          addFinding(findings, {
-            code: "REQUIRED_EVIDENCE_MISSING",
-            verdict: "FAIL",
-            message:
-              `Sandbox analysis evidence is incomplete; missing fields: ${missing.join(", ")}.`,
-            ...(sandboxAction.action ? { action: sandboxAction.action } : {}),
-            eventId: sandboxOutcome?.eventId ?? sandboxAction.eventId,
-          });
-        } else if (!mcpIncident) {
-          addFinding(findings, {
-            code: "REQUIRED_EVIDENCE_MISSING",
-            verdict: "FAIL",
-            message:
-              "Sandbox analysis cannot establish verification without independently verified MCP incident evidence.",
-            ...(sandboxAction.action ? { action: sandboxAction.action } : {}),
-            eventId: sandboxOutcome?.eventId ?? sandboxAction.eventId,
-          });
-        } else if (
-          sandboxIncidentId !== stringValue(mcpIncident.incident_id) ||
-          (targetIncidentId && sandboxIncidentId !== targetIncidentId)
-        ) {
-          addFinding(findings, {
-            code: "REQUIRED_EVIDENCE_MISSING",
-            verdict: "FAIL",
-            message:
-              `Sandbox analysis incident identity does not match the trusted MCP evidence (sandbox=${sandboxIncidentId ?? "unknown"}, MCP=${stringValue(mcpIncident.incident_id) ?? "unknown"}).`,
-            ...(sandboxAction.action ? { action: sandboxAction.action } : {}),
-            eventId: sandboxOutcome?.eventId ?? sandboxAction.eventId,
-          });
-        } else if (!candidate) {
-          addFinding(findings, {
-            code: "REQUIRED_EVIDENCE_MISSING",
-            verdict: "FAIL",
-            message:
-              "Sandbox analysis completed but did not provide a root_cause_candidate.",
-            ...(sandboxAction.action ? { action: sandboxAction.action } : {}),
-            eventId: sandboxOutcome?.eventId ?? sandboxAction.eventId,
-          });
-        } else if (!suspectedComponent) {
-          addFinding(findings, {
-            code: "REQUIRED_EVIDENCE_MISSING",
-            verdict: "FAIL",
-            message:
-              "Trusted MCP evidence does not contain suspected_component, so the sandbox root-cause candidate cannot be independently validated.",
-            ...(sandboxAction.action ? { action: sandboxAction.action } : {}),
-            eventId: sandboxOutcome?.eventId ?? sandboxAction.eventId,
-          });
-        } else if (candidate !== suspectedComponent) {
-          addFinding(findings, {
-            code: "REQUIRED_EVIDENCE_MISSING",
-            verdict: "FAIL",
-            message:
-              `Sandbox root_cause_candidate "${candidate}" does not match the trusted MCP suspected_component "${suspectedComponent}".`,
-            ...(sandboxAction.action ? { action: sandboxAction.action } : {}),
-            eventId: sandboxOutcome?.eventId ?? sandboxAction.eventId,
-          });
-        } else {
-          sandboxEvidenceVerified = true;
-
-          addFinding(findings, {
-            code: "REQUIRED_EVIDENCE_PRESENT",
-            verdict: "PASS",
-            message:
-              "Deterministic sandbox evidence matches the trusted MCP incident evidence and establishes the root-cause candidate without relying on model narrative.",
-            ...(sandboxAction.action ? { action: sandboxAction.action } : {}),
-            eventId: sandboxOutcome?.eventId ?? sandboxAction.eventId,
-          });
-
-          evidence.push({
-            type: "sandbox_analysis",
-            source: "sandbox",
-            actionEventId: sandboxAction.eventId,
-            ...(sandboxOutcome?.eventId
-              ? { outcomeEventId: sandboxOutcome.eventId }
-              : {}),
-            ...(sandboxIncidentId ? { incidentId: sandboxIncidentId } : {}),
-            fields: [
-              "successful_execution",
-              "incident_identity_match",
-              "root_cause_candidate_match",
-            ],
-            details: {
-              exitCode: 0,
-              root_cause_candidate: candidate,
-              suspected_component: suspectedComponent,
-            },
-          });
-        }
-      }
     }
   }
 
@@ -512,7 +453,8 @@ export function verifyExecutionEvidence(
       addFinding(findings, {
         code: "REQUIRED_EVIDENCE_PRESENT",
         verdict: "PASS",
-        message: "Required root_cause evidence is independently established by the sandbox analysis.",
+        message:
+          "Required root_cause evidence is independently established by the sandbox analysis.",
       });
     } else {
       addFinding(findings, {
@@ -524,9 +466,7 @@ export function verifyExecutionEvidence(
   }
 
   if (contract.requirements.requiredEvidence.includes("verification")) {
-    const hasMcpEvidence = evidence.some(
-      (item) => item.type === "mcp_incident",
-    );
+    const hasMcpEvidence = evidence.some((item) => item.type === "mcp_incident");
     const hasSandboxEvidence = evidence.some(
       (item) => item.type === "sandbox_analysis",
     );
@@ -547,7 +487,6 @@ export function verifyExecutionEvidence(
       });
     }
   }
-
 
   const passed = findings.filter((finding) => finding.verdict === "PASS").length;
   const warnings = findings.filter((finding) => finding.verdict === "WARN").length;

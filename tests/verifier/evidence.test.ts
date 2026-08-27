@@ -29,6 +29,7 @@ function goldenPath(): VerificationObservation[] {
       kind: "action",
       action: "mcp:incident.lookup:lookup_incident",
       eventId: "mcp-action",
+      data: { requestedIncidentId: "INC-042" },
     },
     {
       kind: "outcome",
@@ -79,6 +80,41 @@ function goldenPath(): VerificationObservation[] {
   ];
 }
 
+function sandboxOutcome(
+  actionEventId: string,
+  eventId: string,
+  exitCode: number,
+): VerificationObservation {
+  return {
+    kind: "outcome",
+    outcomeVerified: true,
+    eventId,
+    actionEventId,
+    data: {
+      parsedContent: {
+        success: true,
+        response: {
+          exitCode,
+          result:
+            exitCode === 0
+              ? JSON.stringify({
+                  incident: {
+                    found: true,
+                    incident_id: "INC-042",
+                    service: "analytics",
+                    severity: "high",
+                    status: "investigating",
+                    suspected_component: "nightly-worker",
+                  },
+                  root_cause_candidate: "nightly-worker",
+                })
+              : "python3: analysis failed",
+        },
+      },
+    },
+  };
+}
+
 test("passes the real MCP + sandbox evidence chain", () => {
   const report = verifyExecutionEvidence(contract, goldenPath(), {
     targetIncidentId: "INC-042",
@@ -125,8 +161,12 @@ test("fails when the sandbox candidate is altered", () => {
   assert.equal(report.verdict, "FAIL");
   assert.ok(
     report.findings.some((finding) =>
-      finding.message.includes("does not match the trusted MCP suspected_component"),
+      finding.message.includes("did not produce a verified successful analysis result"),
     ),
+  );
+  assert.equal(
+    report.evidence.some((item) => item.type === "sandbox_analysis"),
+    false,
   );
 });
 
@@ -142,7 +182,9 @@ test("fails when an action has no correlated outcome", () => {
   assert.equal(report.verdict, "FAIL");
   assert.ok(
     report.findings.some((finding) =>
-      finding.message.includes("no correlated tool outcome"),
+      finding.message.includes(
+        "Sandbox execution did not produce a verified successful analysis result",
+      ),
     ),
   );
 });
@@ -207,11 +249,10 @@ test("fails when the trusted MCP result is incomplete", () => {
   assert.equal(report.verdict, "FAIL");
   assert.ok(
     report.findings.some((finding) =>
-      finding.message.includes("missing fields"),
+      finding.message.includes("Trusted incident lookup evidence is missing"),
     ),
   );
 });
-
 
 test("fails sandbox evidence when the correlated tool response has a non-zero exit code", () => {
   const observations = goldenPath();
@@ -239,7 +280,7 @@ test("fails sandbox evidence when the correlated tool response has a non-zero ex
   assert.ok(
     report.findings.some((finding) =>
       finding.message.includes(
-        "did not prove a successful deterministic sandbox execution",
+        "did not produce a verified successful analysis result",
       ),
     ),
   );
@@ -247,4 +288,55 @@ test("fails sandbox evidence when the correlated tool response has a non-zero ex
     report.evidence.some((item) => item.type === "sandbox_analysis"),
     false,
   );
+});
+
+test("allows a failed sandbox attempt to recover on a later retry", () => {
+  const observations: VerificationObservation[] = [
+    goldenPath()[0]!,
+    goldenPath()[1]!,
+    {
+      kind: "action",
+      action: "sandbox:execute",
+      eventId: "sandbox-attempt-1",
+    },
+    sandboxOutcome("sandbox-attempt-1", "sandbox-outcome-1", 2),
+    {
+      kind: "action",
+      action: "sandbox:execute",
+      eventId: "sandbox-attempt-2",
+    },
+    sandboxOutcome("sandbox-attempt-2", "sandbox-outcome-2", 0),
+  ];
+
+  const report = verifyExecutionEvidence(contract, observations, {
+    targetIncidentId: "INC-042",
+  });
+
+  assert.equal(report.verdict, "PASS");
+  assert.equal(report.failures, 0);
+  assert.equal(
+    report.evidence.some(
+      (item) =>
+        item.type === "sandbox_analysis" &&
+        item.actionEventId === "sandbox-attempt-2",
+    ),
+    true,
+  );
+});
+
+test("does not trust a lookup whose request targets a different incident", () => {
+  const observations = goldenPath();
+  const mcpAction = observations[0];
+  assert.equal(mcpAction?.kind, "action");
+
+  if (mcpAction?.kind === "action") {
+    mcpAction.data = { requestedIncidentId: "INC-999" };
+  }
+
+  const report = verifyExecutionEvidence(contract, observations, {
+    targetIncidentId: "INC-042",
+  });
+
+  assert.equal(report.verdict, "FAIL");
+  assert.equal(report.evidence.some((item) => item.type === "mcp_incident"), false);
 });
