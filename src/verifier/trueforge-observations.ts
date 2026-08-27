@@ -270,8 +270,6 @@ function findPendingOutcomeState(
    */
   return pendingStates.find(
     (state) =>
-      state.functionName ===
-        "call_tool" &&
       !!state.action &&
       !state.outcomeObserved,
   );
@@ -414,6 +412,12 @@ export function normalizeTrueForgeObservations(
         ) {
           state.action =
             `mcp:${state.mcpServer}:${state.toolName}`;
+        } else if (
+          state.functionName === "exec" ||
+          (state.mcpServer === "sandbox" &&
+            state.toolName === "exec")
+        ) {
+          state.action = "sandbox:execute";
         }
 
         for (const key of keys) {
@@ -427,8 +431,6 @@ export function normalizeTrueForgeObservations(
           !pendingActionStates.includes(
             state,
           ) &&
-          state.functionName ===
-            "call_tool" &&
           state.action
         ) {
           pendingActionStates.push(
@@ -438,8 +440,6 @@ export function normalizeTrueForgeObservations(
 
         if (
           !state.emitted &&
-          state.functionName ===
-            "call_tool" &&
           state.action
         ) {
           observations.push({
@@ -523,14 +523,10 @@ export function normalizeTrueForgeObservations(
      *
      * do not correspond to an actual call_tool
      * action because they have no resolved action
-     * state. Ignore them.
+     * state. Ignore them. Sandbox execution responses are handled by the
+     * same correlation path because their action is `sandbox:execute`.
      */
-    if (
-      !state ||
-      state.functionName !==
-        "call_tool" ||
-      !state.action
-    ) {
+    if (!state || !state.action) {
       continue;
     }
 

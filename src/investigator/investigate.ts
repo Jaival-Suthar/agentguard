@@ -1,5 +1,5 @@
 import "dotenv/config";
-
+import { readFile } from "node:fs/promises";
 import { TrueForge } from "@truefoundry/trueforge-sdk";
 
 import type { RecordedTrueForgeEvent } from "../events/types.js";
@@ -42,6 +42,10 @@ const incidentId = getEnv(
   "INC-042",
 );
 
+const sandboxEnabled =
+  process.argv.includes("--sandbox") ||
+  getEnv("TRUEFORGE_ENABLE_SANDBOX", "false").toLowerCase() === "true";
+
 const client = new TrueForge({
   baseUrl,
   timeoutInSeconds: 600,
@@ -79,7 +83,24 @@ const prompt = [
   "Report only facts supported by tool results.",
   "Explicitly distinguish known facts from unknowns.",
   "Do not claim a root cause unless the evidence establishes it.",
-  "Do not perform write operations.",
+  "Do not perform write operations outside the sandbox.",
+  ...(sandboxEnabled
+    ? [
+        "SANDBOX MODE IS ENABLED.",
+        "After obtaining the incident evidence, use the TrueForge Sandbox `exec` tool for deterministic analysis.",
+        "Execute the uploaded sandbox-analysis.py.",
+        "Do not rewrite or generate the Python program.",
+        "Pass the exact lookup_incident tool response to sandbox-analysis.py through stdin.",
+        "Use JSON exactly as returned by lookup_incident; do not remove or alter quotation marks.",
+        "Run the script with: printf '%s' '<exact JSON>' | python3 sandbox-analysis.py",
+        "The script must validate incident_id, service, severity, status, and suspected_component.",
+        "The script must fail closed if any required field is absent.",
+        "The script must derive root_cause_candidate only from suspected_component.",
+        "The script must write analysis.json.",
+        "Use the successful sandbox execution result as evidence.",
+        "Do not invent or modify incident values.",
+      ]
+    : []),
   "Return a concise investigation summary.",
 ].join("\n");
 
@@ -173,6 +194,13 @@ if (!hasRequestedMcpServer) {
       name: requestedModelName,
     },
     mcpServers: configuredMcpServers,
+    config: {
+      ...(savedAgent.manifest.config ?? {}),
+      sandbox: {
+        ...(savedAgent.manifest.config?.sandbox ?? {}),
+        enabled: sandboxEnabled,
+      },
+    },
   };
 
   console.log("Session agent MCP configuration:");
@@ -213,6 +241,7 @@ if (!hasRequestedMcpServer) {
   console.log(`Agent: ${agentName}`);
   console.log(`Runtime model: ${runtimeModelName}`);
   console.log(`MCP server: ${mcpServerName}`);
+  console.log(`Sandbox: ${sandboxEnabled ? "enabled" : "disabled"}`);
   console.log(`Incident: ${incidentId}`);
   console.log("");
 
@@ -220,7 +249,9 @@ if (!hasRequestedMcpServer) {
     "Starting incident investigation...",
   );
   console.log("");
-
+  const sandboxAnalysisScript = await readFile(
+    new URL("./sandbox-analysis.py", import.meta.url),
+  );
   const stream =
     await client.sessions.createTurnStream(
       session.id,
@@ -228,7 +259,17 @@ if (!hasRequestedMcpServer) {
         input: [
           {
             type: "user.message",
-            content: prompt,
+            content: [
+              {
+                type: "text",
+                text: prompt,
+              },
+              {
+                type: "file",
+                name: "sandbox-analysis.py",
+                data: `data:text/x-python;base64,${sandboxAnalysisScript.toString("base64")}`,
+              },
+            ],
           },
         ],
       },

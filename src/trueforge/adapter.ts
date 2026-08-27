@@ -18,7 +18,11 @@ function eventTimestamp(
   event: Record<string, unknown>,
   receivedAt: string,
 ): string {
-  return stringValue(event.createdAt) ?? receivedAt;
+  return (
+    stringValue(event.createdAt) ??
+    stringValue(event.created_at) ??
+    receivedAt
+  );
 }
 
 function statusValue(
@@ -386,6 +390,31 @@ export function normalizeTrueForgeEvent(
           threadId: raw.threadId,
           finishReason: raw.finishReason,
           usage: raw.usage,
+        },
+        raw,
+      };
+    }
+
+    case "sandbox.created": {
+      const sandboxId =
+        stringValue(raw.sandboxId) ??
+        stringValue(raw.sandbox_id);
+      const threadId =
+        raw.threadId ?? raw.thread_id;
+      const correlationId = stringValue(raw.id);
+
+      return {
+        id,
+        runId: context.runId,
+        ...(context.sessionId ? { sessionId: context.sessionId } : {}),
+        source: "trueforge",
+        type: "SANDBOX_CREATED",
+        timestamp,
+        receivedAt: record.received_at,
+        ...(correlationId ? { correlationId } : {}),
+        data: {
+          ...(sandboxId ? { sandboxId } : {}),
+          threadId,
         },
         raw,
       };

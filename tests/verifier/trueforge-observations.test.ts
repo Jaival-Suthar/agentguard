@@ -545,3 +545,46 @@ test(
     );
   },
 );
+
+test(
+  "extracts sandbox exec as an AgentGuard action and correlates its outcome",
+  () => {
+    const observations = normalizeTrueForgeObservations([
+      {
+        id: "sandbox-message-1",
+        type: "model.message.delta",
+        toolCalls: [
+          {
+            id: "sandbox-call-1",
+            index: 0,
+            type: "function",
+            function: {
+              name: "exec",
+              arguments: JSON.stringify({
+                intent: "Validate incident evidence deterministically",
+                command: "python analysis.py",
+              }),
+            },
+          },
+        ],
+      },
+      {
+        id: "sandbox-response-1",
+        type: "tool.response",
+        toolCallId: "sandbox-call-1",
+        content: JSON.stringify({
+          success: true,
+          response: { exitCode: 0, result: '{"root_cause_candidate":"nightly-worker"}' },
+        }),
+      },
+    ]);
+
+    assert.equal(observations.length, 2);
+    assert.equal(observations[0]?.kind, "action");
+    assert.equal(observations[0]?.action, "sandbox:execute");
+    assert.equal(observations[0]?.eventId, "sandbox-message-1");
+    assert.equal(observations[1]?.kind, "outcome");
+    assert.equal(observations[1]?.outcomeVerified, true);
+    assert.equal(observations[1]?.actionEventId, "sandbox-message-1");
+  },
+);
