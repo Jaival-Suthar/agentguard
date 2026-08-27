@@ -5,6 +5,7 @@ import { TrueForge } from "@truefoundry/trueforge-sdk";
 import type { RecordedTrueForgeEvent } from "../events/types.js";
 
 import { normalizeTrueForgeRecords } from "../trueforge/adapter.js";
+import { normalizeTrueForgeObservations } from "../verifier/trueforge-observations.js";
 
 import { getEnv, requireEnv } from "../trueforge/env.js";
 
@@ -20,6 +21,7 @@ import {
 } from "./report.js";
 
 import type { InvestigationStatus } from "./types.js";
+import type { VerificationObservation } from "../verifier/types.js";
 
 const baseUrl = getEnv(
   "TRUEFORGE_BASE_URL",
@@ -113,6 +115,35 @@ const recordedEvents: RecordedTrueForgeEvent[] = [];
 let investigationStatus: InvestigationStatus = "INCOMPLETE";
 
 let runError: unknown;
+
+function isSuccessfulSandboxOutcome(
+  observation: VerificationObservation,
+): boolean {
+  const parsedContent = observation.data?.parsedContent;
+
+  if (
+    !parsedContent ||
+    typeof parsedContent !== "object" ||
+    Array.isArray(parsedContent)
+  ) {
+    return false;
+  }
+
+  const response =
+    (parsedContent as Record<string, unknown>).response;
+
+  if (
+    !response ||
+    typeof response !== "object" ||
+    Array.isArray(response)
+  ) {
+    return false;
+  }
+
+  return (
+    (response as Record<string, unknown>).exitCode === 0
+  );
+}
 
 try {
   console.log(`Run ID: ${runId}`);
@@ -456,6 +487,31 @@ if (runError) {
         toolName: "lookup_incident",
       },
     );
+
+    if (sandboxEnabled) {
+      const sandboxObservations =
+        normalizeTrueForgeObservations(
+          recordedEvents.map((record) => record.event),
+        );
+
+      const sandboxExecutionVerified =
+        sandboxObservations.some(
+          (observation: VerificationObservation) =>
+            observation.kind === "outcome" &&
+            observation.data?.action === "sandbox:execute" &&
+            observation.outcomeVerified === true &&
+            isSuccessfulSandboxOutcome(observation),
+        );
+
+      if (!sandboxExecutionVerified) {
+        investigationStatus = "INCOMPLETE";
+        process.exitCode = 1;
+
+        console.error(
+          "Sandbox verification failed: no successful sandbox execution was observed.",
+        );
+      }
+    }
 
   const report =
     buildInvestigationReport({

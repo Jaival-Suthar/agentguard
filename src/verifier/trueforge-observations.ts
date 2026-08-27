@@ -257,24 +257,6 @@ function isExplicitChaosFault(
   return false;
 }
 
-function findPendingOutcomeState(
-  pendingStates: readonly PendingToolCall[],
-): PendingToolCall | undefined {
-  /*
-   * Prefer an action that has not received an outcome.
-   *
-   * TrueForge may omit the call ID from the model
-   * delta while still emitting it on tool.response.
-   * In that shape, the response is correlated to the
-   * oldest unresolved call_tool action.
-   */
-  return pendingStates.find(
-    (state) =>
-      !!state.action &&
-      !state.outcomeObserved,
-  );
-}
-
 export function normalizeTrueForgeObservations(
   events: readonly RawTrueForgeEvent[],
 ): VerificationObservation[] {
@@ -290,9 +272,6 @@ export function normalizeTrueForgeObservations(
     string,
     PendingToolCall
   >();
-
-  const pendingActionStates: PendingToolCall[] =
-    [];
 
   for (const event of events) {
     /*
@@ -428,17 +407,6 @@ export function normalizeTrueForgeObservations(
         }
 
         if (
-          !pendingActionStates.includes(
-            state,
-          ) &&
-          state.action
-        ) {
-          pendingActionStates.push(
-            state,
-          );
-        }
-
-        if (
           !state.emitted &&
           state.action
         ) {
@@ -502,18 +470,11 @@ export function normalizeTrueForgeObservations(
     }
 
     /*
-     * Live TrueForge evidence can omit the call ID
-     * from model.message.delta while including it
-     * in tool.response.
-     *
-     * Fall back to the unresolved MCP action.
+     * If TrueForge does not provide a tool-call ID that
+     * can be matched to a reconstructed action, fail
+     * closed. Never assign an outcome to an unrelated
+     * pending MCP or sandbox action.
      */
-    if (!state) {
-      state =
-        findPendingOutcomeState(
-          pendingActionStates,
-        );
-    }
 
     /*
      * Discovery responses such as:
@@ -523,8 +484,8 @@ export function normalizeTrueForgeObservations(
      *
      * do not correspond to an actual call_tool
      * action because they have no resolved action
-     * state. Ignore them. Sandbox execution responses are handled by the
-     * same correlation path because their action is `sandbox:execute`.
+     * state. Ignore them. Sandbox execution responses are
+     * correlated only through their exact tool-call ID.
      */
     if (!state || !state.action) {
       continue;
