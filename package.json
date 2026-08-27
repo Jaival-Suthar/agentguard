@@ -13,7 +13,8 @@
     "verify:chaos-mcp": "tsx scripts/verify-chaos-mcp.ts",
     "investigate:incident": "tsx src/investigator/investigate.ts",
     "trueforge:configure-sandbox": "tsx scripts/configure-trueforge-sandbox.ts",
-    "investigate:incident:sandbox": "tsx src/investigator/investigate.ts --sandbox"
+    "investigate:incident:sandbox": "tsx src/investigator/investigate.ts --sandbox",
+    "verify:evidence": "tsx scripts/verify-evidence.ts"
   },
   "engines": {
     "node": ">=22.14.0"
