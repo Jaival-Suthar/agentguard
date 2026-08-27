@@ -27,6 +27,14 @@ limits:
 
 requirements:
   verificationRequired: true
+  requiredActions:
+    - mcp:incident.lookup:lookup_incident
+    - sandbox:execute
   requiredEvidence:
     - root_cause
     - verification
+
+ordering:
+  before:
+    - action: mcp:incident.lookup:lookup_incident
+      before: sandbox:execute

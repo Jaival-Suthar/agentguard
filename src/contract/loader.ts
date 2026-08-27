@@ -54,6 +54,58 @@ function readBoolean(
   return value;
 }
 
+function readOrdering(
+  value: unknown,
+): Array<{ action: string; before: string }> {
+  if (!Array.isArray(value)) {
+    throw new Error("ordering.before must be an array");
+  }
+
+  const pairs = value.map((item, index) => {
+    if (!isRecord(item)) {
+      throw new Error(`ordering.before[${index}] must be an object`);
+    }
+
+    const action = item.action;
+    const before = item.before;
+
+    if (typeof action !== "string" || action.trim().length === 0) {
+      throw new Error(`ordering.before[${index}].action must be a non-empty string`);
+    }
+
+    if (typeof before !== "string" || before.trim().length === 0) {
+      throw new Error(`ordering.before[${index}].before must be a non-empty string`);
+    }
+
+    const normalizedAction = action.trim();
+    const normalizedBefore = before.trim();
+
+    if (normalizedAction === normalizedBefore) {
+      throw new Error(
+        `ordering.before[${index}] cannot require an action to occur before itself`,
+      );
+    }
+
+    return {
+      action: normalizedAction,
+      before: normalizedBefore,
+    };
+  });
+
+  const seen = new Set<string>();
+  for (const pair of pairs) {
+    const key = `${pair.action}\u0000${pair.before}`;
+    if (seen.has(key)) {
+      throw new Error(
+        `ordering.before must not contain duplicate relationship "${pair.action}" before "${pair.before}"`,
+      );
+    }
+    seen.add(key);
+  }
+
+  return pairs;
+}
+
 function readNonNegativeInteger(
   root: Record<string, unknown>,
   key: string,
@@ -155,6 +207,76 @@ export function parseExecutionContract(text: string): ExecutionContract {
     "requirements.verificationRequired",
   );
 
+  const requiredActions = stringArray(
+    requirements.requiredActions ?? [],
+    "requirements.requiredActions",
+  );
+
+  const declaredActions = new Set([
+    ...allow,
+    ...approvalRequired,
+    ...deny,
+  ]);
+
+  for (const action of requiredActions) {
+    if (!declaredActions.has(action)) {
+      throw new Error(
+        `Required action "${action}" must be declared in actions.allow, actions.approvalRequired, or actions.deny`,
+      );
+    }
+  }
+
+  const orderingRoot = parsed.ordering;
+  const ordering = orderingRoot === undefined
+    ? { before: [] }
+    : requiredRecord(parsed, "ordering");
+  const before = readOrdering(ordering.before);
+
+  for (const relationship of before) {
+    if (!declaredActions.has(relationship.action)) {
+      throw new Error(
+        `Ordering action "${relationship.action}" must be declared in the execution contract`,
+      );
+    }
+
+    if (!declaredActions.has(relationship.before)) {
+      throw new Error(
+        `Ordering action "${relationship.before}" must be declared in the execution contract`,
+      );
+    }
+  }
+
+  const graph = new Map<string, string[]>();
+  for (const relationship of before) {
+    const edges = graph.get(relationship.action) ?? [];
+    edges.push(relationship.before);
+    graph.set(relationship.action, edges);
+  }
+
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+
+  function visit(action: string): void {
+    if (visiting.has(action)) {
+      throw new Error("ordering.before must not contain cyclic relationships");
+    }
+
+    if (visited.has(action)) {
+      return;
+    }
+
+    visiting.add(action);
+    for (const next of graph.get(action) ?? []) {
+      visit(next);
+    }
+    visiting.delete(action);
+    visited.add(action);
+  }
+
+  for (const action of graph.keys()) {
+    visit(action);
+  }
+
   const requiredEvidence = stringArray(
     requirements.requiredEvidence,
     "requirements.requiredEvidence",
@@ -181,7 +303,12 @@ export function parseExecutionContract(text: string): ExecutionContract {
 
     requirements: {
       verificationRequired,
+      requiredActions,
       requiredEvidence,
+    },
+
+    ordering: {
+      before,
     },
   };
 }

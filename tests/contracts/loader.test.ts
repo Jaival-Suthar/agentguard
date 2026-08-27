@@ -79,3 +79,105 @@ requirements:
     /Unsupported execution contract version: 2/,
   );
 });
+
+test("loads required trajectory actions and ordering constraints", async () => {
+  const contract = await loadExecutionContract(
+    "contracts/incident-investigation.yaml",
+  );
+
+  assert.deepEqual(contract.requirements.requiredActions, [
+    "mcp:incident.lookup:lookup_incident",
+    "sandbox:execute",
+  ]);
+
+  assert.deepEqual(contract.ordering.before, [
+    {
+      action: "mcp:incident.lookup:lookup_incident",
+      before: "sandbox:execute",
+    },
+  ]);
+});
+
+test("rejects a required action that is not declared", () => {
+  assert.throws(
+    () =>
+      parseExecutionContract(`
+version: 1
+name: invalid
+actions:
+  allow:
+    - mcp:database.read
+  approvalRequired: []
+  deny: []
+limits:
+  maxRetries: 1
+requirements:
+  verificationRequired: true
+  requiredActions:
+    - mcp:github.read
+  requiredEvidence:
+    - root_cause
+`),
+    /Required action "mcp:github.read" must be declared/,
+  );
+});
+
+test("rejects cyclic ordering constraints", () => {
+  assert.throws(
+    () =>
+      parseExecutionContract(`
+version: 1
+name: invalid
+actions:
+  allow:
+    - mcp:a
+    - mcp:b
+  approvalRequired: []
+  deny: []
+limits:
+  maxRetries: 1
+requirements:
+  verificationRequired: false
+  requiredActions:
+    - mcp:a
+    - mcp:b
+  requiredEvidence:
+    - root_cause
+ordering:
+  before:
+    - action: mcp:a
+      before: mcp:b
+    - action: mcp:b
+      before: mcp:a
+`),
+    /ordering.before must not contain cyclic relationships/,
+  );
+});
+
+test("rejects ordering relationships for undeclared actions", () => {
+  assert.throws(
+    () =>
+      parseExecutionContract(`
+version: 1
+name: invalid
+actions:
+  allow:
+    - mcp:a
+  approvalRequired: []
+  deny: []
+limits:
+  maxRetries: 1
+requirements:
+  verificationRequired: false
+  requiredActions:
+    - mcp:a
+  requiredEvidence:
+    - root_cause
+ordering:
+  before:
+    - action: mcp:a
+      before: mcp:b
+`),
+    /Ordering action "mcp:b" must be declared/,
+  );
+});
