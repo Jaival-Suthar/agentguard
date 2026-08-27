@@ -44,6 +44,7 @@ type PendingToolCall = {
   action?: string;
   emitted?: boolean;
   outcomeObserved?: boolean;
+  requestedIncidentId?: string;
 };
 
 function isRecord(
@@ -263,6 +264,18 @@ export function normalizeTrueForgeObservations(
   const observations: VerificationObservation[] =
     [];
 
+  /*
+   * pendingToolCalls is used only to merge multiple
+   * model-message deltas belonging to the SAME provider
+   * event/index.
+   *
+   * pendingToolCallsById is the authoritative response
+   * correlation map.
+   *
+   * IMPORTANT:
+   * An action without a provider toolCallId is never
+   * allowed to inherit another action's state.
+   */
   const pendingToolCalls = new Map<
     string,
     PendingToolCall
@@ -275,8 +288,8 @@ export function normalizeTrueForgeObservations(
 
   for (const event of events) {
     /*
-     * Reconstruct MCP call_tool actions from
-     * model messages and deltas.
+     * Reconstruct tool actions from model messages
+     * and deltas.
      */
     if (
       event.type === "model.message" ||
@@ -306,21 +319,48 @@ export function normalizeTrueForgeObservations(
           | PendingToolCall
           | undefined;
 
-        for (const key of keys) {
-          const candidate =
-            pendingToolCalls.get(key);
+        /*
+         * ONLY an explicit provider toolCallId may
+         * reconnect a tool call to an existing state.
+         *
+         * Without one, create a completely new state.
+         *
+         * This prevents a retry/repeated sandbox call
+         * from inheriting the previous call's outcome.
+         */
+        if (incomingToolCallId) {
+          state =
+            pendingToolCallsById.get(
+              incomingToolCallId,
+            );
+        }
 
-          if (
-            candidate &&
-            (
-              !incomingToolCallId ||
-              !candidate.toolCallId ||
-              candidate.toolCallId ===
-                incomingToolCallId
-            )
-          ) {
-            state = candidate;
-            break;
+        /*
+         * For provider events without an ID, deltas from
+         * the exact same event/index may still be merged.
+         *
+         * This lookup is intentionally performed only when
+         * the incoming provider ID is absent AND the key
+         * belongs to this exact event.
+         *
+         * We never search another event's state.
+         */
+        if (!state && !incomingToolCallId) {
+          const eventId = stringValue(event.id);
+
+          // An ID-less provider event has no stable identity that can
+          // safely reconnect it to prior state. Only an explicit event ID
+          // may reconnect a delta to an existing pending call.
+          if (eventId) {
+            const eventKey = keys[0];
+
+            if (eventKey) {
+              const candidate = pendingToolCalls.get(eventKey);
+
+              if (candidate?.eventId === eventId) {
+                state = candidate;
+              }
+            }
           }
         }
 
@@ -365,6 +405,11 @@ export function normalizeTrueForgeObservations(
               ?.tool_name,
           );
 
+        const requestedIncidentId =
+          isRecord(argumentsValue?.input)
+            ? stringValue(argumentsValue.input.incident_id)
+            : undefined;
+
         if (mcpServer) {
           state.mcpServer =
             mcpServer;
@@ -373,6 +418,11 @@ export function normalizeTrueForgeObservations(
         if (toolName) {
           state.toolName =
             toolName;
+        }
+
+        if (requestedIncidentId) {
+          state.requestedIncidentId =
+            requestedIncidentId;
         }
 
         const eventId =
@@ -399,6 +449,13 @@ export function normalizeTrueForgeObservations(
           state.action = "sandbox:execute";
         }
 
+        /*
+         * Store the state under this exact event/index
+         * key so subsequent deltas of THIS event can
+         * merge into it.
+         *
+         * A different event gets a different state.
+         */
         for (const key of keys) {
           pendingToolCalls.set(
             key,
@@ -419,6 +476,14 @@ export function normalizeTrueForgeObservations(
                     state.eventId,
                 }
               : {}),
+            ...(state.requestedIncidentId
+              ? {
+                  data: {
+                    requestedIncidentId:
+                      state.requestedIncidentId,
+                  },
+                }
+              : {}),
           });
 
           state.emitted = true;
@@ -436,8 +501,12 @@ export function normalizeTrueForgeObservations(
     }
 
     /*
-     * Tool responses contain the actual MCP
-     * execution result.
+     * Tool responses contain the actual execution result.
+     *
+     * Responses MUST correlate through the exact
+     * provider toolCallId. There is deliberately NO
+     * fallback to event ID, position, action name, or
+     * latest pending action.
      */
     if (
       event.type !== "tool.response"
@@ -453,39 +522,23 @@ export function normalizeTrueForgeObservations(
         event.tool_call_id,
       );
 
-    let state:
-      | PendingToolCall
-      | undefined;
-
-    /*
-     * Best case: TrueForge gives us the exact
-     * tool-call ID and we reconstructed the same
-     * ID from the model event.
-     */
-    if (toolCallId) {
-      state =
-        pendingToolCallsById.get(
-          toolCallId,
-        );
+    if (!toolCallId) {
+      /*
+       * A response without a provider correlation ID
+       * cannot be safely assigned to an action.
+       */
+      continue;
     }
 
-    /*
-     * If TrueForge does not provide a tool-call ID that
-     * can be matched to a reconstructed action, fail
-     * closed. Never assign an outcome to an unrelated
-     * pending MCP or sandbox action.
-     */
+    const state =
+      pendingToolCallsById.get(
+        toolCallId,
+      );
 
     /*
-     * Discovery responses such as:
+     * Unknown provider response IDs are ignored.
      *
-     * incident.lookup.chaos:
-     *   lookup_incident
-     *
-     * do not correspond to an actual call_tool
-     * action because they have no resolved action
-     * state. Ignore them. Sandbox execution responses are
-     * correlated only through their exact tool-call ID.
+     * Never attach them to the most recent action.
      */
     if (!state || !state.action) {
       continue;
@@ -503,22 +556,15 @@ export function normalizeTrueForgeObservations(
 
     /*
      * An outcome is verified when the tool response
-     * itself is a parseable MCP response envelope.
+     * itself is a parseable response envelope.
      *
      * A valid MCP error is still a verified outcome:
      * the tool executed and deterministically reported
      * an error.
      *
-     * We therefore do NOT reject error envelopes here.
-     * The verifier can distinguish:
-     *
-     *   - outcomeVerified
-     *   - parsed error
-     *   - explicit Chaos fault
-     *
-     * separately.
-     *
-     * An unparseable response remains unverified.
+     * Sandbox success is evaluated later by the evidence
+     * verifier using exitCode and deterministic result
+     * contents.
      */
     const outcomeVerified =
       parsedContent !== undefined;
@@ -532,9 +578,7 @@ export function normalizeTrueForgeObservations(
     const observationData:
       Record<string, unknown> = {
         action: state.action,
-        toolCallId:
-          toolCallId ??
-          state.toolCallId,
+        toolCallId,
         content:
           event.content,
         explicitChaosFault,
@@ -552,12 +596,6 @@ export function normalizeTrueForgeObservations(
         parsedContent;
     }
 
-    /*
-     * Preserve whether this is the expected
-     * deterministic Chaos fault. This is evidence
-     * about the trajectory, not an assertion that
-     * the incident itself is valid.
-     */
     if (explicitChaosFault) {
       observationData.chaosFault =
         "timeout";
@@ -584,16 +622,6 @@ export function normalizeTrueForgeObservations(
     });
 
     state.outcomeObserved = true;
-
-    if (toolCallId) {
-      state.toolCallId =
-        toolCallId;
-
-      pendingToolCallsById.set(
-        toolCallId,
-        state,
-      );
-    }
   }
 
   return observations;
