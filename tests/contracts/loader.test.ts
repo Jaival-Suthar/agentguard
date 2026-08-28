@@ -25,6 +25,7 @@ test("loads the incident-investigation execution contract", async () => {
     "host:filesystem.read",
     "host:filesystem.write",
     "host:shell",
+    "mcp:incident.lookup:delete_incident",
     "secrets:read",
   ]);
   assert.equal(contract.limits.maxRetries, 3);

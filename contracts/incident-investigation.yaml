@@ -20,6 +20,7 @@ actions:
     - host:filesystem.read
     - host:filesystem.write
     - host:shell
+    - mcp:incident.lookup:delete_incident
     - secrets:read
 
 limits:

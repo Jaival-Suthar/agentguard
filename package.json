@@ -14,7 +14,8 @@
     "investigate:incident": "tsx src/investigator/investigate.ts",
     "trueforge:configure-sandbox": "tsx scripts/configure-trueforge-sandbox.ts",
     "investigate:incident:sandbox": "tsx src/investigator/investigate.ts --sandbox",
-    "verify:evidence": "tsx scripts/verify-evidence.ts"
+    "verify:evidence": "tsx scripts/verify-evidence.ts",
+    "verify:policy": "tsx scripts/verify-policy.ts"
   },
   "engines": {
     "node": ">=22.14.0"
