@@ -28,6 +28,69 @@ function logPolicyEvent(event: PolicyDecisionEvent): void {
   console.log(JSON.stringify(event));
 }
 
+/**
+ * Serializes approval prompts so only one operation can read terminal input
+ * at a time. This prevents one terminal response from authorizing multiple
+ * concurrent approval requests.
+ */
+export function createSerializedApprovalRequester(
+  prompt: (request: ApprovalRequest) => Promise<string>,
+): NonNullable<PolicyGateOptions["requestApproval"]> {
+  let queue = Promise.resolve();
+
+  return async (request: ApprovalRequest) => {
+    const previous = queue;
+
+    let release!: () => void;
+
+    queue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await previous;
+
+    try {
+      const answer = await prompt(request);
+      const approved = answer.trim().toLowerCase() === "y";
+
+      return {
+        requestId: request.id,
+        approved,
+        decidedAt: new Date().toISOString(),
+        ...(approved ? {} : { reason: "Human approval denied" }),
+      };
+    } catch {
+      return {
+        requestId: request.id,
+        approved: false,
+        decidedAt: new Date().toISOString(),
+        reason: "Approval prompt failed; failing closed",
+      };
+    } finally {
+      release();
+    }
+  };
+}
+
+const serializedHumanApproval: NonNullable<
+  PolicyGateOptions["requestApproval"]
+> = createSerializedApprovalRequester(
+  async (request) => {
+    const readline = createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    try {
+      return await readline.question(
+        `\n[AgentGuard] APPROVAL REQUIRED\nAction: ${request.action}\nReason: ${request.reason}\nApprove? [y/N] `,
+      );
+    } finally {
+      readline.close();
+    }
+  },
+);
+
 async function requestHumanApproval(request: ApprovalRequest) {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     return {
@@ -38,27 +101,7 @@ async function requestHumanApproval(request: ApprovalRequest) {
     };
   }
 
-  const readline = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  try {
-    const answer = await readline.question(
-      `\n[AgentGuard] APPROVAL REQUIRED\nAction: ${request.action}\nReason: ${request.reason}\nApprove? [y/N] `,
-    );
-
-    const approved = answer.trim().toLowerCase() === "y";
-
-    return {
-      requestId: request.id,
-      approved,
-      decidedAt: new Date().toISOString(),
-      ...(approved ? {} : { reason: "Human approval denied" }),
-    };
-  } finally {
-    readline.close();
-  }
+  return serializedHumanApproval(request);
 }
 
 export function createPolicyGate(
@@ -99,6 +142,7 @@ function policyErrorResponse(error: unknown) {
             decision: "BLOCK",
             action: error.decision.action,
             requestId: error.requestId,
+            reason: error.decision.reason,
           }),
         },
       ],
@@ -302,14 +346,24 @@ export function createApp(
   });
 
   app.post("/mcp", async (req, res) => {
-    const transport = new NodeStreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-    });
+    try {
+      const transport = new NodeStreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+      });
 
-    const server = await createIncidentServer(requestApproval);
+      const server = await createIncidentServer(requestApproval);
 
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    } catch (error) {
+      console.error("[MCP] request handling failed", error);
+
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: "MCP request failed",
+        });
+      }
+    }
   });
 
   app.get("/mcp", (_req, res) => {

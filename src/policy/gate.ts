@@ -43,7 +43,7 @@ function defaultRequestId(): string {
 /**
  * Hard pre-execution boundary. The executor is never invoked for BLOCK, and
  * approval-gated actions are never invoked until the approval callback grants
- * the request.
+ * the exact request created by this gate.
  */
 export class PolicyGate {
   private readonly now: () => string;
@@ -94,11 +94,44 @@ export class PolicyGate {
 
     const approval = await this.requestApproval(request);
 
-    if (!approval.approved) {
-      throw new ApprovalDeniedError(decision, request.id);
+    if (approval.requestId !== request.id) {
+      const mismatchDecision: PolicyDecisionResult = {
+        ...decision,
+        decision: "BLOCK",
+        reason:
+          "Approval response did not match the exact request created by the policy gate",
+        metadata: {
+          ...(decision.metadata ?? {}),
+          approvalRequestId: request.id,
+          approvalResponseRequestId: approval.requestId,
+          approvalDecision: "rejected",
+          rejectionReason: "request_id_mismatch",
+        },
+      };
+
+      await this.emitDecision(mismatchDecision);
+
+      throw new ApprovalDeniedError(mismatchDecision, request.id);
     }
 
-    await this.emitDecision({
+    if (!approval.approved) {
+      const deniedDecision: PolicyDecisionResult = {
+        ...decision,
+        decision: "BLOCK",
+        reason: approval.reason ?? "Human approval denied; action was not executed",
+        metadata: {
+          ...(decision.metadata ?? {}),
+          approvalRequestId: request.id,
+          approvalDecision: "denied",
+        },
+      };
+
+      await this.emitDecision(deniedDecision);
+
+      throw new ApprovalDeniedError(deniedDecision, request.id);
+    }
+
+    const effectiveDecision: PolicyDecisionResult = {
       ...decision,
       decision: "ALLOW",
       reason: "Human approval granted; action is now permitted",
@@ -107,11 +140,13 @@ export class PolicyGate {
         approvalRequestId: request.id,
         approvalDecision: "granted",
       },
-    });
+    };
+
+    await this.emitDecision(effectiveDecision);
 
     return {
       result: await executor(),
-      decision,
+      decision: effectiveDecision,
       approvalRequestId: request.id,
     };
   }
