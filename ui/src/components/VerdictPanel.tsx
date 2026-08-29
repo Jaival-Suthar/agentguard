@@ -1,0 +1,23 @@
+import { FiCheckCircle, FiShield, FiXCircle } from "react-icons/fi";
+import type { AssuranceArtifact } from "../types";
+
+export function VerdictPanel({ artifact }: { artifact: AssuranceArtifact }) {
+  const pass = artifact.verdict === "PASS";
+  return (
+    <div className={`ag-verdict-panel ${pass ? "pass" : "fail"}`}>
+      <div className="flex items-start gap-4">
+        <div className="verdict-icon">{pass ? <FiCheckCircle size={28} /> : <FiXCircle size={28} />}</div>
+        <div className="min-w-0 flex-1">
+          <div className="eyebrow">ASSURANCE RESULT</div>
+          <div className="mt-1 flex flex-wrap items-center gap-3"><h2 className="text-2xl font-bold text-slate-50">{artifact.verdict}</h2><span className="rounded-full border border-white/10 px-2.5 py-1 text-xs font-medium text-slate-300">{artifact.status.replaceAll("_", " ")}</span></div>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">{artifact.summary}</p>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-2 md:grid-cols-3">
+        <div className="mini-proof"><FiShield /> Policy <span>{artifact.policy.status}</span></div>
+        <div className="mini-proof"><FiCheckCircle /> Evidence <span>{artifact.evidence.status}</span></div>
+        <div className="mini-proof"><FiCheckCircle /> Contract <span>{artifact.contractVerification.status}</span></div>
+      </div>
+    </div>
+  );
+}

@@ -165,3 +165,29 @@ normalized observation
 execution contract
     ↓
 PASS
+## Assurance Console
+
+The repository now includes the AgentGuard Assurance Console under `ui/`. It is a proof surface, not a replacement for TrueForge: TrueForge remains responsible for agent execution, while the console renders an `AssuranceArtifact` produced by AgentGuard.
+
+Start the console locally:
+
+```text
+npm install --prefix ui
+npm run ui:dev
+```
+
+Build it with:
+
+```text
+npm run ui:build
+```
+
+For a real captured run, generate an artifact from a JSONL trajectory:
+
+```text
+npm run assurance:export -- data\\runs\\<run-id>.jsonl
+```
+
+The recovery/chaos verifier now persists its real assurance artifact automatically under `data/assurance/<run-id>.json`.
+
+The UI deliberately supports importing a JSON assurance artifact so the same screen can be used with a clean-clone demo artifact without reconstructing truth in the frontend.

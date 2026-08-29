@@ -16,7 +16,12 @@
     "trueforge:configure-sandbox": "tsx scripts/configure-trueforge-sandbox.ts",
     "investigate:incident:sandbox": "tsx src/investigator/investigate.ts --sandbox",
     "verify:evidence": "tsx scripts/verify-evidence.ts",
-    "verify:policy": "tsx scripts/verify-policy.ts"
+    "verify:policy": "tsx scripts/verify-policy.ts",
+    "assurance:export": "tsx scripts/export-assurance-artifact.ts",
+    "assurance:index": "tsx scripts/index-assurance-artifacts.ts",
+    "ui:dev": "npm --prefix ui run dev",
+    "ui:build": "npm --prefix ui run build",
+    "ui:typecheck": "npm --prefix ui run typecheck"
   },
   "engines": {
     "node": ">=22.14.0"
