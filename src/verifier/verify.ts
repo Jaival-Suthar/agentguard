@@ -37,40 +37,26 @@ function eventIdField(
 function approvedActionEventIds(
   observations: readonly VerificationObservation[],
 ): Set<string> {
-  return new Set(
-    observations
-      .filter(
-        (
-          observation,
-        ): observation is VerificationObservation & {
-          actionEventId: string;
-        } =>
-          observation.kind === "approval" &&
-          observation.approved === true &&
-          typeof observation.actionEventId === "string",
-      )
-      .map((observation) => observation.actionEventId),
-  );
+  const approved = new Set<string>();
+
+  for (const observation of observations) {
+    if (
+      observation.kind === "approval" &&
+      observation.approved === true &&
+      typeof observation.actionEventId === "string"
+    ) {
+      approved.add(observation.actionEventId);
+    }
+  }
+
+  return approved;
 }
 
 /**
  * Returns true when the declared ordering relationship is violated.
  *
- * Retry semantics:
- * - The predecessor must be observed at least once.
- * - The dependent action must be observed at least once.
- * - At least one predecessor occurrence must precede the first
- *   dependent-action occurrence.
- *
- * Therefore:
- *
- *   lookup -> sandbox -> sandbox     VALID
- *   lookup -> sandbox                 VALID
- *   sandbox -> lookup                 INVALID
- *   sandbox -> sandbox -> lookup      INVALID
- *
- * A later retry cannot retroactively satisfy an ordering requirement
- * that was already violated by the first dependent attempt.
+ * The first dependent action must not occur before the predecessor.
+ * Later occurrences of the dependent action are valid retries.
  */
 function hasOrderingViolation(
   observations: readonly VerificationObservation[],
@@ -93,15 +79,12 @@ function hasOrderingViolation(
     if (observation.action === dependent) {
       dependentObserved = true;
 
-      // The first dependent attempt happened before the required
-      // predecessor was observed.
       if (!predecessorObserved) {
         return true;
       }
     }
   }
 
-  // Missing endpoints are handled by requiredActions independently.
   if (!predecessorObserved || !dependentObserved) {
     return false;
   }
@@ -109,56 +92,169 @@ function hasOrderingViolation(
   return false;
 }
 
+/**
+ * Marks failed outcomes as recovered only when the observation stream proves:
+ *
+ *   failed outcome
+ *        ↓
+ *   valid retry observation
+ *        ↓
+ *   later action attempt for the same action
+ *        ↓
+ *   verified outcome correlated to that later action attempt
+ *
+ * A verified outcome that occurred before the failure cannot recover it.
+ * A later verified outcome without a retry cannot recover it.
+ */
 function recoveredOutcomeEventIds(
   observations: readonly VerificationObservation[],
+  maxRetries: number,
 ): Set<string> {
   const actionNames = new Map<string, string>();
+  const actionIndexes = new Map<string, number>();
 
-  for (const observation of observations) {
+  for (let index = 0; index < observations.length; index += 1) {
+    const observation = observations[index];
+
+    if (!observation) {
+      continue;
+    }
+
     if (
       observation.kind === "action" &&
-      observation.eventId &&
-      observation.action
+      typeof observation.eventId === "string" &&
+      typeof observation.action === "string"
     ) {
-      actionNames.set(
-        observation.eventId,
-        observation.action,
-      );
-    }
-  }
-
-  const verifiedActions = new Set<string>();
-
-  for (const observation of observations) {
-    if (
-      observation.kind === "outcome" &&
-      observation.outcomeVerified === true &&
-      observation.actionEventId
-    ) {
-      const action =
-        actionNames.get(observation.actionEventId);
-
-      if (action) {
-        verifiedActions.add(action);
-      }
+      actionNames.set(observation.eventId, observation.action);
+      actionIndexes.set(observation.eventId, index);
     }
   }
 
   const recovered = new Set<string>();
 
-  for (const observation of observations) {
-    if (
-      observation.kind === "outcome" &&
-      observation.outcomeVerified !== true &&
-      observation.eventId &&
-      observation.actionEventId
-    ) {
-      const action =
-        actionNames.get(observation.actionEventId);
+  for (
+    let failedIndex = 0;
+    failedIndex < observations.length;
+    failedIndex += 1
+  ) {
+    const failedOutcome = observations[failedIndex];
 
-      if (action && verifiedActions.has(action)) {
-        recovered.add(observation.eventId);
+    if (!failedOutcome) {
+      continue;
+    }
+
+    if (
+      failedOutcome.kind !== "outcome" ||
+      failedOutcome.outcomeVerified === true ||
+      typeof failedOutcome.eventId !== "string" ||
+      typeof failedOutcome.actionEventId !== "string"
+    ) {
+      continue;
+    }
+
+    const failedAction = actionNames.get(
+      failedOutcome.actionEventId,
+    );
+
+    const failedActionIndex = actionIndexes.get(
+      failedOutcome.actionEventId,
+    );
+
+    if (
+      failedAction === undefined ||
+      failedActionIndex === undefined
+    ) {
+      continue;
+    }
+
+    /*
+     * First prove that a valid retry actually occurred after
+     * the failed outcome.
+     */
+    let retryIndex = -1;
+
+    for (
+      let index = failedIndex + 1;
+      index < observations.length;
+      index += 1
+    ) {
+      const retry = observations[index];
+
+      if (!retry) {
+        continue;
       }
+
+      if (
+        retry.kind === "retry" &&
+        typeof retry.retryCount === "number" &&
+        Number.isInteger(retry.retryCount) &&
+        retry.retryCount > 0 &&
+        retry.retryCount <= maxRetries
+      ) {
+        retryIndex = index;
+        break;
+      }
+    }
+
+    if (retryIndex === -1) {
+      continue;
+    }
+
+    /*
+     * Now find a later action attempt for the same action.
+     * It must happen after the retry, not merely somewhere later
+     * in the original trajectory.
+     */
+    let retryActionEventId: string | undefined;
+
+    for (
+      let index = retryIndex + 1;
+      index < observations.length;
+      index += 1
+    ) {
+      const actionObservation = observations[index];
+
+      if (
+        !actionObservation ||
+        actionObservation.kind !== "action" ||
+        typeof actionObservation.eventId !== "string" ||
+        typeof actionObservation.action !== "string"
+      ) {
+        continue;
+      }
+
+      if (actionObservation.action === failedAction) {
+        retryActionEventId = actionObservation.eventId;
+        break;
+      }
+    }
+
+    if (!retryActionEventId) {
+      continue;
+    }
+
+    /*
+     * Finally require a verified outcome correlated specifically
+     * to that later action attempt.
+     */
+    for (
+      let index = retryIndex + 1;
+      index < observations.length;
+      index += 1
+    ) {
+      const verifiedOutcome = observations[index];
+
+      if (
+        !verifiedOutcome ||
+        verifiedOutcome.kind !== "outcome" ||
+        verifiedOutcome.outcomeVerified !== true ||
+        verifiedOutcome.actionEventId !== retryActionEventId
+      ) {
+        continue;
+      }
+
+      recovered.add(failedOutcome.eventId);
+      break;
     }
   }
 
@@ -170,7 +266,12 @@ export function verifyObservations(
   observations: readonly VerificationObservation[],
 ): VerificationReport {
   const findings: VerificationFinding[] = [];
-  const recoveredOutcomeIds = recoveredOutcomeEventIds(observations);
+
+  const recoveredOutcomeIds = recoveredOutcomeEventIds(
+    observations,
+    contract.limits.maxRetries,
+  );
+
   const allowed = actionSet(contract.actions.allow);
 
   const approvalRequired = actionSet(
@@ -184,9 +285,6 @@ export function verifyObservations(
 
   let outcomeObserved = false;
 
-  // Track action names independently from their individual policy findings.
-  // This lets trajectory requirements be enforced after the full ordered
-  // observation stream has been inspected.
   const observedActions = new Set<string>();
 
   for (const observation of observations) {
@@ -345,7 +443,7 @@ export function verifyObservations(
       continue;
     }
 
-        if (observation.kind === "outcome") {
+    if (observation.kind === "outcome") {
       outcomeObserved = true;
 
       if (
@@ -353,14 +451,14 @@ export function verifyObservations(
         observation.outcomeVerified !== true
       ) {
         if (
-          observation.eventId &&
+          typeof observation.eventId === "string" &&
           recoveredOutcomeIds.has(observation.eventId)
         ) {
           findings.push({
             code: "OUTCOME_RECOVERED",
             verdict: "PASS",
             message:
-              "The failed outcome was recovered by a later verified outcome for the same action.",
+              "The failed outcome was recovered by a later verified outcome for the same action attempt.",
             ...eventIdField(observation),
           });
         } else {
@@ -420,7 +518,6 @@ export function verifyObservations(
     });
   }
 
-  // Every declared required action must occur at least once.
   for (const requiredAction of contract.requirements.requiredActions) {
     if (!observedActions.has(requiredAction)) {
       findings.push({
@@ -441,11 +538,6 @@ export function verifyObservations(
     }
   }
 
-  // Enforce every declared ordering relationship against the actual
-  // chronological action stream.
-  //
-  // Repeated dependent actions are valid retries only when the predecessor
-  // was already observed before the first dependent attempt.
   for (const relationship of contract.ordering.before) {
     const violation = hasOrderingViolation(
       observations,
@@ -461,6 +553,7 @@ export function verifyObservations(
           `Action "${relationship.action}" must occur before "${relationship.before}", but the dependent action was observed before its required predecessor.`,
         action: relationship.action,
       });
+
       continue;
     }
 

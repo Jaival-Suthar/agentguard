@@ -378,20 +378,28 @@ try {
     },
   );
 
-  allObservations.push(
-    ...attemptReports.flatMap(
-      (attempt) => attempt.observations,
-    ),
-  );
+    for (let index = 0; index < attemptReports.length; index += 1) {
+      const attempt = attemptReports[index];
 
-  allObservations.push({
-    kind: "retry",
-    retryCount: recovery.retries,
-    data: {
-      recovered: recovery.recovered,
-      attempts: recovery.attempts,
-    },
-  });
+      if (!attempt) {
+        continue;
+      }
+
+      allObservations.push(...attempt.observations);
+
+      const isLastAttempt = index === attemptReports.length - 1;
+
+      if (!isLastAttempt) {
+        allObservations.push({
+          kind: "retry",
+          retryCount: index + 1,
+          data: {
+            recovered: recovery.recovered,
+            attempts: recovery.attempts,
+          },
+        });
+      }
+    }
 
   const finalEvidenceReport =
     verifyExecutionEvidence(
@@ -434,23 +442,24 @@ try {
   const exhausted =
     error instanceof RecoveryExhaustedError;
 
-  allObservations.push(
-    ...attemptReports.flatMap(
-      (attempt) => attempt.observations,
-    ),
-  );
+    for (let index = 0; index < attemptReports.length; index += 1) {
+      const attempt = attemptReports[index];
 
-  const retryCount = exhausted
-    ? contract.limits.maxRetries
-    : Math.max(
-        0,
-        attemptReports.length - 1,
-      );
+      if (!attempt) {
+        continue;
+      }
 
-  allObservations.push({
-    kind: "retry",
-    retryCount,
-  });
+      allObservations.push(...attempt.observations);
+
+      const isLastAttempt = index === attemptReports.length - 1;
+
+      if (!isLastAttempt) {
+        allObservations.push({
+          kind: "retry",
+          retryCount: index + 1,
+        });
+      }
+    }
 
   const finalEvidenceReport =
     verifyExecutionEvidence(
