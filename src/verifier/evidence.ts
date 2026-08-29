@@ -28,6 +28,11 @@ export interface EvidenceVerificationReport {
 export interface EvidenceVerificationOptions {
   targetIncidentId?: string;
   requireSandboxAnalysis?: boolean;
+  /**
+   * Action identity to treat as the trusted incident lookup.
+   * Defaults to the production incident.lookup action.
+   */
+  mcpIncidentAction?: string;
 }
 
 const INCIDENT_FIELDS = [
@@ -174,6 +179,9 @@ export function verifyExecutionEvidence(
   const evidence: VerifiedEvidence[] = [];
   const outcomes = outcomeByActionEventId(observations);
   const targetIncidentId = options.targetIncidentId?.trim();
+  const mcpIncidentAction =
+    options.mcpIncidentAction?.trim() ||
+    "mcp:incident.lookup:lookup_incident";
   const requireSandboxAnalysis =
     options.requireSandboxAnalysis ??
     contract.requirements.requiredEvidence.includes("root_cause");
@@ -278,8 +286,7 @@ export function verifyExecutionEvidence(
   }
 
   const mcpActions = actions.filter(
-    (observation) =>
-      observation.action === "mcp:incident.lookup:lookup_incident",
+    (observation) => observation.action === mcpIncidentAction,
   );
 
   let mcpIncident: Record<string, unknown> | undefined;

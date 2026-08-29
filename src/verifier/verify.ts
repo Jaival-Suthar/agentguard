@@ -109,12 +109,68 @@ function hasOrderingViolation(
   return false;
 }
 
+function recoveredOutcomeEventIds(
+  observations: readonly VerificationObservation[],
+): Set<string> {
+  const actionNames = new Map<string, string>();
+
+  for (const observation of observations) {
+    if (
+      observation.kind === "action" &&
+      observation.eventId &&
+      observation.action
+    ) {
+      actionNames.set(
+        observation.eventId,
+        observation.action,
+      );
+    }
+  }
+
+  const verifiedActions = new Set<string>();
+
+  for (const observation of observations) {
+    if (
+      observation.kind === "outcome" &&
+      observation.outcomeVerified === true &&
+      observation.actionEventId
+    ) {
+      const action =
+        actionNames.get(observation.actionEventId);
+
+      if (action) {
+        verifiedActions.add(action);
+      }
+    }
+  }
+
+  const recovered = new Set<string>();
+
+  for (const observation of observations) {
+    if (
+      observation.kind === "outcome" &&
+      observation.outcomeVerified !== true &&
+      observation.eventId &&
+      observation.actionEventId
+    ) {
+      const action =
+        actionNames.get(observation.actionEventId);
+
+      if (action && verifiedActions.has(action)) {
+        recovered.add(observation.eventId);
+      }
+    }
+  }
+
+  return recovered;
+}
+
 export function verifyObservations(
   contract: ExecutionContract,
   observations: readonly VerificationObservation[],
 ): VerificationReport {
   const findings: VerificationFinding[] = [];
-
+  const recoveredOutcomeIds = recoveredOutcomeEventIds(observations);
   const allowed = actionSet(contract.actions.allow);
 
   const approvalRequired = actionSet(
@@ -289,20 +345,33 @@ export function verifyObservations(
       continue;
     }
 
-    if (observation.kind === "outcome") {
+        if (observation.kind === "outcome") {
       outcomeObserved = true;
 
       if (
         contract.requirements.verificationRequired &&
         observation.outcomeVerified !== true
       ) {
-        findings.push({
-          code: "OUTCOME_UNVERIFIED",
-          verdict: "FAIL",
-          message:
-            "The contract requires outcome verification, but the observed tool outcome was not verified.",
-          ...eventIdField(observation),
-        });
+        if (
+          observation.eventId &&
+          recoveredOutcomeIds.has(observation.eventId)
+        ) {
+          findings.push({
+            code: "OUTCOME_RECOVERED",
+            verdict: "PASS",
+            message:
+              "The failed outcome was recovered by a later verified outcome for the same action.",
+            ...eventIdField(observation),
+          });
+        } else {
+          findings.push({
+            code: "OUTCOME_UNVERIFIED",
+            verdict: "FAIL",
+            message:
+              "The contract requires outcome verification, but the observed tool outcome was not verified.",
+            ...eventIdField(observation),
+          });
+        }
       } else {
         findings.push({
           code: "OUTCOME_VERIFIED",

@@ -11,6 +11,7 @@
     "trueforge:probe": "tsx src/trueforge/probe.ts",
     "verify:real-mcp": "tsx scripts/verify-real-mcp.ts",
     "verify:chaos-mcp": "tsx scripts/verify-chaos-mcp.ts",
+    "verify:recovery-chaos": "tsx scripts/verify-recovery-chaos.ts",
     "investigate:incident": "tsx src/investigator/investigate.ts",
     "trueforge:configure-sandbox": "tsx scripts/configure-trueforge-sandbox.ts",
     "investigate:incident:sandbox": "tsx src/investigator/investigate.ts --sandbox",

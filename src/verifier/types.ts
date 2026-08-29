@@ -51,6 +51,7 @@ export interface VerificationFinding {
     | "ORDERING_VIOLATION"
     | "ORDERING_SATISFIED"
     | "OUTCOME_UNVERIFIED"
+    | "OUTCOME_RECOVERED"
     | "OUTCOME_MISSING"
     | "OUTCOME_VERIFIED"
     | "UNKNOWN_ACTION"
