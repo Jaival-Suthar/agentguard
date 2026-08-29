@@ -122,10 +122,10 @@ function readNonNegativeInteger(
 
   if (
     typeof value !== "number" ||
-    !Number.isInteger(value) ||
+    !Number.isSafeInteger(value) ||
     value < 0
   ) {
-    throw new Error(`${label} must be a non-negative integer`);
+    throw new Error(`${label} must be a non-negative safe integer`);
   }
 
   return value;
