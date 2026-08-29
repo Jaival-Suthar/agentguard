@@ -16,20 +16,24 @@ const CHAOS_DELAY_MS = Number(
 
 type ChaosMode =
   | "malformed-result"
-  | "timeout";
+  | "timeout"
+  | "fail-once";
 
 function getChaosMode(): ChaosMode {
   if (
     CHAOS_MODE === "malformed-result" ||
-    CHAOS_MODE === "timeout"
+    CHAOS_MODE === "timeout" ||
+    CHAOS_MODE === "fail-once"
   ) {
     return CHAOS_MODE;
   }
 
   throw new Error(
-    `Unsupported CHAOS_MODE "${CHAOS_MODE}". Expected "malformed-result" or "timeout".`,
+    `Unsupported CHAOS_MODE "${CHAOS_MODE}". Expected "malformed-result", "timeout", or "fail-once".`,
   );
 }
+
+let failOnceCallCount = 0;
 
 function createIncidentServer(): McpServer {
   const mode = getChaosMode();
@@ -65,30 +69,43 @@ function createIncidentServer(): McpServer {
           setTimeout(resolve, CHAOS_DELAY_MS);
         });
 
-        /*
-         * Timeout mode must never fall through to a
-         * successful { found: true } response.
-         *
-         * Throwing makes the MCP tool execution fail
-         * instead of returning successful incident data.
-         */
         throw new Error(
           `Chaos MCP timeout injected for incident ${incident_id}`,
         );
       }
 
-      /*
-       * Deliberately malformed JSON.
-       *
-       * The missing closing brace is intentional.
-       * AgentGuard must not accept this as trusted
-       * incident evidence.
-       */
+      const shouldFailOnce =
+        mode === "fail-once" && failOnceCallCount === 0;
+
+      failOnceCallCount += 1;
+
+      if (mode === "malformed-result" || shouldFailOnce) {
+        console.log(
+          `[CHAOS] returning malformed result for incident_id=${incident_id} call=${failOnceCallCount}`,
+        );
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `{"found":true,"incident_id":"${incident_id}"`,
+            },
+          ],
+        };
+      }
+
       return {
         content: [
           {
             type: "text" as const,
-            text: `{"found":true,"incident_id":"${incident_id}"`,
+            text: JSON.stringify({
+              found: true,
+              incident_id,
+              service: "analytics",
+              severity: "high",
+              status: "investigating",
+              suspected_component: "nightly-worker",
+            }),
           },
         ],
       };

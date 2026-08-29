@@ -607,3 +607,166 @@ test(
     );
   },
 );
+
+test(
+  "passes a failed outcome when a later retry verifies the same action",
+  () => {
+    const report =
+      verifyObservations(
+        contract,
+        [
+          {
+            kind: "action",
+            action: "mcp:database.read",
+            eventId: "action-attempt-1",
+          },
+          {
+            kind: "outcome",
+            outcomeVerified: false,
+            eventId: "outcome-attempt-1",
+            actionEventId: "action-attempt-1",
+          },
+          {
+            kind: "retry",
+            retryCount: 1,
+            eventId: "retry-1",
+          },
+          {
+            kind: "action",
+            action: "mcp:database.read",
+            eventId: "action-attempt-2",
+          },
+          {
+            kind: "outcome",
+            outcomeVerified: true,
+            eventId: "outcome-attempt-2",
+            actionEventId: "action-attempt-2",
+          },
+        ],
+      );
+
+    assert.equal(report.verdict, "PASS");
+    assert.equal(report.failures, 0);
+
+    assert.ok(
+      report.findings.some(
+        (finding) =>
+          finding.code === "OUTCOME_RECOVERED",
+      ),
+    );
+  },
+);
+
+test(
+  "fails when a verified outcome exists only before the failed outcome",
+  () => {
+    const report = verifyObservations(
+      contract,
+      [
+        {
+          kind: "action",
+          action: "mcp:database.read",
+          eventId: "action-success",
+        },
+        {
+          kind: "outcome",
+          outcomeVerified: true,
+          eventId: "outcome-success",
+          actionEventId: "action-success",
+        },
+        {
+          kind: "action",
+          action: "mcp:database.read",
+          eventId: "action-failed",
+        },
+        {
+          kind: "outcome",
+          outcomeVerified: false,
+          eventId: "outcome-failed",
+          actionEventId: "action-failed",
+        },
+      ],
+    );
+
+    assert.equal(report.verdict, "FAIL");
+
+    assert.ok(
+      report.findings.some(
+        (finding) => finding.code === "OUTCOME_UNVERIFIED",
+      ),
+    );
+  },
+);
+
+test(
+  "fails when a later verified outcome has no retry observation",
+  () => {
+    const report = verifyObservations(
+      contract,
+      [
+        {
+          kind: "action",
+          action: "mcp:database.read",
+          eventId: "action-attempt-1",
+        },
+        {
+          kind: "outcome",
+          outcomeVerified: false,
+          eventId: "outcome-attempt-1",
+          actionEventId: "action-attempt-1",
+        },
+        {
+          kind: "action",
+          action: "mcp:database.read",
+          eventId: "action-attempt-2",
+        },
+        {
+          kind: "outcome",
+          outcomeVerified: true,
+          eventId: "outcome-attempt-2",
+          actionEventId: "action-attempt-2",
+        },
+      ],
+    );
+
+    assert.equal(report.verdict, "FAIL");
+
+    assert.ok(
+      report.findings.some(
+        (finding) => finding.code === "OUTCOME_UNVERIFIED",
+      ),
+    );
+  },
+);
+
+
+test(
+  "still fails an unverified outcome when no later verified retry exists",
+  () => {
+    const report =
+      verifyObservations(
+        contract,
+        [
+          {
+            kind: "action",
+            action: "mcp:database.read",
+            eventId: "action-failed",
+          },
+          {
+            kind: "outcome",
+            outcomeVerified: false,
+            eventId: "outcome-failed",
+            actionEventId: "action-failed",
+          },
+        ],
+      );
+
+    assert.equal(report.verdict, "FAIL");
+    assert.ok(
+      report.findings.some(
+        (finding) =>
+          finding.code === "OUTCOME_UNVERIFIED",
+      ),
+    );
+  },
+);

@@ -15,3 +15,16 @@ identity against controlled failures.
 
 ```text
 CHAOS_MODE=malformed-result
+
+### Fail once (Recovery proof)
+
+```text
+CHAOS_MODE=fail-once
+```
+
+The first lookup returns deliberately malformed JSON. Subsequent lookups return
+a complete synthetic incident result so AgentGuard can prove bounded recovery:
+
+```text
+malformed evidence -> Recovery retry -> verified incident evidence
+```

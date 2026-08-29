@@ -76,7 +76,35 @@ else {
 
     Set-Content -Path $composePath -Value $updatedCompose -NoNewline
 
+    $compose = $updatedCompose
+
     Write-Host "Applied AgentGuard Docker host binding: HOST=0.0.0.0" -ForegroundColor Green
+}
+
+if ($compose -match '(?m)^\s+extra_hosts:\s*$' -and $compose -match '(?m)host\.docker\.internal:host-gateway') {
+    Write-Host "TrueForge Docker host-gateway mapping already configured." -ForegroundColor Cyan
+}
+else {
+    $pattern = '(?m)^(\s+environment:\s*\r?\n)'
+
+    if ($compose -notmatch $pattern) {
+        throw "Could not locate server environment block in docker-compose.yml"
+    }
+
+    $extraHostsBlock = @'
+$1    extra_hosts:
+      - "host.docker.internal:host-gateway"
+'@
+
+    $updatedCompose = [regex]::Replace(
+        $compose,
+        $pattern,
+        $extraHostsBlock
+    )
+
+    Set-Content -Path $composePath -Value $updatedCompose -NoNewline
+
+    Write-Host "Applied AgentGuard Docker host-gateway mapping: host.docker.internal:host-gateway" -ForegroundColor Green
 }
 
 # ---------------------------------------------------------------------------
