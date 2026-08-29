@@ -23,13 +23,11 @@ function highestVerdict(
 function executionCheck(
   input: AssuranceBuildInput,
 ): AssuranceCheck {
-  if (input.recovery.exhausted) {
+  if (input.executionFailed) {
     return {
       status: "FAIL",
-      summary: "Execution did not complete successfully.",
-      details: [
-        `Recovery exhausted after ${input.recovery.attempts} attempt(s).`,
-      ],
+      summary:
+        "Execution did not complete successfully.",
     };
   }
 
@@ -59,7 +57,8 @@ function recoveryCheck(
   if (input.recovery.exhausted) {
     return {
       status: "FAIL",
-      summary: "Recovery exhausted its retry budget.",
+      summary:
+        "Recovery exhausted its retry budget.",
       details: [
         `Attempts: ${input.recovery.attempts}`,
         `Retries: ${input.recovery.retries}`,
@@ -94,10 +93,14 @@ function policyCheck(
     };
   }
 
-  if (input.policyVerdict === "APPROVAL_REQUIRED") {
+  if (
+    input.policyVerdict ===
+    "APPROVAL_REQUIRED"
+  ) {
     return {
       status: "WARN",
-      summary: "Policy requires human approval before execution.",
+      summary:
+        "Policy requires human approval before execution.",
     };
   }
 
@@ -188,6 +191,14 @@ function collectFailureReasons(
     .map((check) => check.summary);
 }
 
+function collectWarningReasons(
+  checks: readonly AssuranceCheck[],
+): string[] {
+  return checks
+    .filter((check) => check.status === "WARN")
+    .map((check) => check.summary);
+}
+
 export function buildAssuranceArtifact(
   input: AssuranceBuildInput,
 ): AssuranceArtifact {
@@ -197,29 +208,44 @@ export function buildAssuranceArtifact(
   const evidence = evidenceCheck(input);
   const contractVerification = contractCheck(input);
 
-  const verdict = highestVerdict([
-    policy.status,
-    execution.status,
-    recovery.status,
-    evidence.status,
-    contractVerification.status,
-  ]);
-
-  const status = statusFor(input, verdict);
-
-  const failureReasons = collectFailureReasons([
+  const checks = [
     policy,
     execution,
     recovery,
     evidence,
     contractVerification,
-  ]);
+  ];
+
+  const verdict = highestVerdict(
+    checks.map((check) => check.status),
+  );
+
+  const status = statusFor(input, verdict);
+
+  const failureReasons =
+    collectFailureReasons(checks);
+
+  const warningReasons =
+    collectWarningReasons(checks);
+
+  let summary: string;
+
+  if (verdict === "PASS") {
+    summary = input.recovery.recovered
+      ? "Execution recovered successfully and all assurance checks passed."
+      : "Execution completed and all assurance checks passed.";
+  } else if (verdict === "WARN") {
+    summary = warningReasons.join(" ");
+  } else {
+    summary = failureReasons.join(" ");
+  }
 
   return {
     version: 1,
 
     runId: input.runId,
     contract: input.contractName,
+
     ...(input.incidentId
       ? { incidentId: input.incidentId }
       : {}),
@@ -244,16 +270,9 @@ export function buildAssuranceArtifact(
     evidence,
     contractVerification,
 
-    summary:
-      verdict === "PASS"
-        ? input.recovery.recovered
-          ? "Execution recovered successfully and all assurance checks passed."
-          : "Execution completed and all assurance checks passed."
-        : failureReasons.join(" "),
-
+    summary,
     failureReasons,
 
-    generatedAt:
-      input.generatedAt ?? new Date().toISOString(),
+    generatedAt: input.generatedAt,
   };
 }

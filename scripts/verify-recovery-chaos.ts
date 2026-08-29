@@ -6,7 +6,10 @@ import {
   executeWithRecovery,
   RecoveryExhaustedError,
 } from "../src/recovery/index.js";
-import { RunStore, type RunMetadata } from "../src/trueforge/run-store.js";
+import {
+  RunStore,
+  type RunMetadata,
+} from "../src/trueforge/run-store.js";
 import { normalizeTrueForgeObservations } from "../src/verifier/trueforge-observations.js";
 import {
   verifyExecutionEvidence,
@@ -16,20 +19,26 @@ import { verifyObservations } from "../src/verifier/verify.js";
 import type { VerificationObservation } from "../src/verifier/types.js";
 import type { RecordedTrueForgeEvent } from "../src/events/types.js";
 import { buildAssuranceArtifact } from "../src/assurance/index.js";
+import { evaluatePolicy } from "../src/policy/evaluate.js";
 
 const baseUrl = (
-  process.env.TRUEFORGE_BASE_URL?.trim() || "http://localhost:8791"
+  process.env.TRUEFORGE_BASE_URL?.trim() ||
+  "http://localhost:8791"
 ).replace(/\/+$/, "");
 
-const modelName = process.env.TRUEFORGE_MODEL_NAME?.trim();
-const agentName = process.env.TRUEFORGE_AGENT_NAME?.trim();
+const modelName =
+  process.env.TRUEFORGE_MODEL_NAME?.trim();
+
+const agentName =
+  process.env.TRUEFORGE_AGENT_NAME?.trim();
 
 const mcpServerName =
   process.env.TRUEFORGE_MCP_SERVER_NAME?.trim() ||
   "incident.lookup.chaos";
 
 const incidentId =
-  process.env.TRUEFORGE_INCIDENT_ID?.trim() || "INC-042";
+  process.env.TRUEFORGE_INCIDENT_ID?.trim() ||
+  "INC-042";
 
 const contractPath =
   process.env.TRUEFORGE_RECOVERY_CONTRACT?.trim() ||
@@ -53,14 +62,26 @@ const resolvedAgentName = agentName;
 const EXPECTED_CHAOS_ACTION =
   `mcp:${mcpServerName}:lookup_incident`;
 
-const contract = await loadExecutionContract(contractPath);
+const contract =
+  await loadExecutionContract(contractPath);
+
+const policyDecision = evaluatePolicy(
+  EXPECTED_CHAOS_ACTION,
+  {
+    contract,
+    source: "verify-recovery-chaos",
+    actor: resolvedAgentName,
+  },
+);
 
 const client = new TrueForge({
   baseUrl,
   timeoutInSeconds: 600,
 });
 
-const runId = new Date().toISOString().replace(/[:.]/g, "-");
+const runId =
+  new Date().toISOString().replace(/[:.]/g, "-");
+
 const store = new RunStore(runId);
 
 await store.init();
@@ -76,7 +97,9 @@ const metadata: RunMetadata = {
 };
 
 const eventTypes = new Set<string>();
-const allObservations: VerificationObservation[] = [];
+
+const allObservations: VerificationObservation[] =
+  [];
 
 let nextAttemptNumber = 1;
 
@@ -130,10 +153,12 @@ class RecoveryVerificationError extends Error {
 async function runAttempt(
   attemptNumber: number,
 ): Promise<AttemptExecution> {
-  const { data: savedAgents } = await client.agents.list();
+  const { data: savedAgents } =
+    await client.agents.list();
 
   const savedAgent = savedAgents.find(
-    (agent) => agent.name === resolvedAgentName,
+    (agent) =>
+      agent.name === resolvedAgentName,
   );
 
   if (!savedAgent) {
@@ -151,8 +176,8 @@ async function runAttempt(
     );
   }
 
-  const configuredMcpServers = savedMcpServers.map(
-    (server) => {
+  const configuredMcpServers =
+    savedMcpServers.map((server) => {
       if (server.name === "incident.lookup") {
         return {
           ...server,
@@ -161,12 +186,12 @@ async function runAttempt(
       }
 
       return server;
-    },
-  );
+    });
 
   if (
     !configuredMcpServers.some(
-      (server) => server.name === mcpServerName,
+      (server) =>
+        server.name === mcpServerName,
     )
   ) {
     throw new Error(
@@ -213,8 +238,12 @@ async function runAttempt(
       },
     );
 
-  for await (const { data: event } of stream.withMetadata()) {
-    const receivedAt = new Date().toISOString();
+  for await (
+    const { data: event } of
+      stream.withMetadata()
+  ) {
+    const receivedAt =
+      new Date().toISOString();
 
     const rawEvent =
       event as unknown as Record<string, unknown>;
@@ -239,28 +268,28 @@ async function runAttempt(
   }
 
   /*
-   * IMPORTANT:
+   * Do not reject a turn merely because
+   * TrueForge reports turn.status === "error".
    *
-   * Do not reject a turn merely because TrueForge reports
-   * turn.status === "error".
-   *
-   * A failed Chaos turn is itself evidence that AgentGuard
-   * must normalize and verify. Recovery needs to see that
-   * failed evidence so that the verifier can decide whether
-   * the attempt failed and therefore needs a retry.
+   * A failed Chaos turn is evidence that AgentGuard
+   * must normalize and verify. Recovery needs to see
+   * that failed evidence so the verifier can decide
+   * whether the attempt requires a retry.
    */
   const observations =
     normalizeTrueForgeObservations(rawEvents);
 
-  const report = verifyExecutionEvidence(
-    contract,
-    observations,
-    {
-      targetIncidentId: incidentId,
-      mcpIncidentAction: EXPECTED_CHAOS_ACTION,
-      requireSandboxAnalysis: false,
-    },
-  );
+  const report =
+    verifyExecutionEvidence(
+      contract,
+      observations,
+      {
+        targetIncidentId: incidentId,
+        mcpIncidentAction:
+          EXPECTED_CHAOS_ACTION,
+        requireSandboxAnalysis: false,
+      },
+    );
 
   attemptReports.push({
     attempt: attemptNumber,
@@ -292,7 +321,8 @@ function collectAttemptObservations(): void {
     index < attemptReports.length;
     index += 1
   ) {
-    const attempt = attemptReports[index];
+    const attempt =
+      attemptReports[index];
 
     if (!attempt) {
       continue;
@@ -325,9 +355,15 @@ function printReport(
   console.log(
     "=========================================",
   );
-  console.log(`Contract: ${contract.name}`);
-  console.log(`Evidence: ${store.jsonlPath}`);
-  console.log(`Target incident: ${incidentId}`);
+  console.log(
+    `Contract: ${contract.name}`,
+  );
+  console.log(
+    `Evidence: ${store.jsonlPath}`,
+  );
+  console.log(
+    `Target incident: ${incidentId}`,
+  );
   console.log(
     `Expected action: ${EXPECTED_CHAOS_ACTION}`,
   );
@@ -407,39 +443,75 @@ function printAssurance(
   console.log("");
   console.log("AgentGuard Assurance");
   console.log("====================");
-  console.log(`Run: ${assurance.runId}`);
-  console.log(`Contract: ${assurance.contract}`);
+  console.log(
+    `Run: ${assurance.runId}`,
+  );
+  console.log(
+    `Contract: ${assurance.contract}`,
+  );
   console.log(
     `Incident: ${assurance.incidentId ?? "n/a"}`,
   );
   console.log("");
 
   console.log(
-    `Policy        ${assurance.policy.status === "PASS" ? "✓" : "✗"} ${assurance.policy.summary}`,
+    `Policy        ${
+      assurance.policy.status === "PASS"
+        ? "✓"
+        : "✗"
+    } ${assurance.policy.summary}`,
   );
 
   console.log(
-    `Execution     ${assurance.execution.status === "PASS" ? "✓" : "✗"} ${assurance.execution.summary}`,
+    `Execution     ${
+      assurance.execution.status ===
+      "PASS"
+        ? "✓"
+        : "✗"
+    } ${assurance.execution.summary}`,
   );
 
   console.log(
-    `Recovery      ${assurance.recovery.status === "RECOVERED" || assurance.recovery.status === "NOT_REQUIRED" ? "✓" : "✗"} ${assurance.recovery.status}`,
+    `Recovery      ${
+      assurance.recovery.status ===
+        "RECOVERED" ||
+      assurance.recovery.status ===
+        "NOT_REQUIRED"
+        ? "✓"
+        : "✗"
+    } ${assurance.recovery.status}`,
   );
 
   console.log(
-    `Evidence      ${assurance.evidence.status === "PASS" ? "✓" : "✗"} ${assurance.evidence.summary}`,
+    `Evidence      ${
+      assurance.evidence.status ===
+      "PASS"
+        ? "✓"
+        : "✗"
+    } ${assurance.evidence.summary}`,
   );
 
   console.log(
-    `Contract      ${assurance.contractVerification.status === "PASS" ? "✓" : "✗"} ${assurance.contractVerification.summary}`,
+    `Contract      ${
+      assurance.contractVerification
+        .status === "PASS"
+        ? "✓"
+        : "✗"
+    } ${assurance.contractVerification.summary}`,
   );
 
   console.log("");
 
-  if (assurance.failureReasons.length > 0) {
+  if (
+    assurance.failureReasons.length >
+    0
+  ) {
     console.log("Failure reasons:");
 
-    for (const reason of assurance.failureReasons) {
+    for (
+      const reason of
+        assurance.failureReasons
+    ) {
       console.log(`  - ${reason}`);
     }
 
@@ -453,7 +525,9 @@ function printAssurance(
 
 let recoveryResult:
   | Awaited<
-      ReturnType<typeof executeWithRecovery<AttemptExecution>>
+      ReturnType<
+        typeof executeWithRecovery<AttemptExecution>
+      >
     >
   | undefined;
 
@@ -478,7 +552,9 @@ try {
 
         nextAttemptNumber += 1;
 
-        return runAttempt(attemptNumber);
+        return runAttempt(
+          attemptNumber,
+        );
       },
       {
         onRetry: async (
@@ -521,24 +597,26 @@ try {
       runId,
       contractName: contract.name,
       incidentId,
-
-      policyVerdict: "ALLOW",
-
+      policyVerdict:
+        policyDecision.decision,
+      executionFailed: false,
       recovery: {
-        attempts: recoveryResult.attempts,
-        retries: recoveryResult.retries,
+        attempts:
+          recoveryResult.attempts,
+        retries:
+          recoveryResult.retries,
         recovered:
           recoveryResult.recovered,
         exhausted: false,
         maxRetries:
           contract.limits.maxRetries,
       },
-
       evidenceReport:
         finalEvidenceReport,
-
       contractReport:
         finalContractReport,
+      generatedAt:
+        metadata.startedAt,
     });
 
   printAssurance(assurance);
@@ -557,7 +635,9 @@ try {
   console.log("");
   console.log("RECOVERED → PASS");
   console.log("");
-  console.log(`Evidence: ${store.jsonlPath}`);
+  console.log(
+    `Evidence: ${store.jsonlPath}`,
+  );
 } catch (error) {
   collectAttemptObservations();
 
@@ -582,41 +662,52 @@ try {
       allObservations,
     );
 
-  const exhaustedAttempts =
-    exhausted
-      ? error.attempts
-      : attemptReports.length;
-
-  const exhaustedRetries =
-    exhausted
-      ? error.retries
-      : Math.max(
-          0,
-          attemptReports.length - 1,
-        );
+  const recovery = recoveryResult
+    ? {
+        attempts:
+          recoveryResult.attempts,
+        retries:
+          recoveryResult.retries,
+        recovered:
+          recoveryResult.recovered,
+        exhausted: false,
+      }
+    : {
+        attempts: exhausted
+          ? error.attempts
+          : attemptReports.length,
+        retries: exhausted
+          ? error.retries
+          : Math.max(
+              0,
+              attemptReports.length - 1,
+            ),
+        recovered: false,
+        exhausted,
+      };
 
   const assurance =
     buildAssuranceArtifact({
       runId,
       contractName: contract.name,
       incidentId,
-
-      policyVerdict: "ALLOW",
-
+      policyVerdict:
+        policyDecision.decision,
+      executionFailed: true,
       recovery: {
-        attempts: exhaustedAttempts,
-        retries: exhaustedRetries,
-        recovered: false,
-        exhausted,
+        attempts: recovery.attempts,
+        retries: recovery.retries,
+        recovered: recovery.recovered,
+        exhausted: recovery.exhausted,
         maxRetries:
           contract.limits.maxRetries,
       },
-
       evidenceReport:
         finalEvidenceReport,
-
       contractReport:
         finalContractReport,
+      generatedAt:
+        metadata.startedAt,
     });
 
   printAssurance(assurance);
@@ -635,7 +726,7 @@ try {
   );
 
   console.error(
-    exhausted
+    recovery.exhausted
       ? "RECOVERY EXHAUSTED → FAIL"
       : "RECOVERY INTEGRATION FAILED → FAIL",
   );

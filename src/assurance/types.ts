@@ -24,7 +24,10 @@ export interface AssuranceCheck {
 }
 
 export interface AssuranceRecovery {
-  status: "NOT_REQUIRED" | "RECOVERED" | "EXHAUSTED";
+  status:
+    | "NOT_REQUIRED"
+    | "RECOVERED"
+    | "EXHAUSTED";
   attempts: number;
   retries: number;
   maxRetries: number;
@@ -32,23 +35,18 @@ export interface AssuranceRecovery {
 
 export interface AssuranceArtifact {
   version: 1;
-
   runId: string;
   contract: string;
   incidentId?: string;
-
   status: AssuranceStatus;
   verdict: AssuranceVerdict;
-
   policy: AssuranceCheck;
   execution: AssuranceCheck;
   recovery: AssuranceRecovery;
   evidence: AssuranceCheck;
   contractVerification: AssuranceCheck;
-
   summary: string;
   failureReasons: string[];
-
   generatedAt: string;
 }
 
@@ -57,7 +55,12 @@ export interface AssuranceBuildInput {
   contractName: string;
   incidentId?: string;
 
-  policyVerdict: "ALLOW" | "BLOCK" | "APPROVAL_REQUIRED";
+  policyVerdict:
+    | "ALLOW"
+    | "BLOCK"
+    | "APPROVAL_REQUIRED";
+
+  executionFailed: boolean;
 
   recovery: {
     attempts: number;
@@ -70,5 +73,5 @@ export interface AssuranceBuildInput {
   evidenceReport: EvidenceVerificationReport;
   contractReport: VerificationReport;
 
-  generatedAt?: string;
+  generatedAt: string;
 }
