@@ -1,8 +1,51 @@
-import { FiShield, FiClock, FiFileText } from "react-icons/fi";
-import type { AssuranceArtifact } from "../types";
+import { Tag } from "primereact/tag";
+import { FiShield, FiClock, FiFileText, FiWifi } from "react-icons/fi";
+import type { AssuranceArtifact, RunSummary, LiveConnectionState } from "../types";
+import { formatAssuranceTimestamp } from "../format";
 import { StatusTag } from "./StatusTag";
 
-export function RunHeader({ artifact }: { artifact: AssuranceArtifact }) {
+function connectionSeverity(
+  state: LiveConnectionState,
+): "success" | "warning" | "danger" | "info" {
+  if (state === "VERIFIED") {
+    return "success";
+  }
+
+  if (state === "FAILED") {
+    return "danger";
+  }
+
+  if (state === "RECONNECTING" || state === "RECOVERING" || state === "VERIFYING") {
+    return "warning";
+  }
+
+  return "info";
+}
+
+export function RunHeader({
+  run,
+  artifact,
+  connectionState,
+}: {
+  run: RunSummary | null;
+  artifact: AssuranceArtifact | null;
+  connectionState: LiveConnectionState;
+}) {
+  const title =
+    artifact?.incidentId ??
+    run?.incidentId ??
+    run?.runId ??
+    "Select a run";
+
+  const contract =
+    artifact?.contract ??
+    (run ? `${run.model} · ${run.baseUrl}` : "Waiting for a run");
+
+  const timestamp =
+    artifact?.generatedAt ??
+    run?.completedAt ??
+    run?.startedAt;
+
   return (
     <div className="grid align-items-stretch gap-3 xl:grid-cols-[1fr_auto]">
       <div className="ag-card p-5">
@@ -11,22 +54,29 @@ export function RunHeader({ artifact }: { artifact: AssuranceArtifact }) {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="eyebrow">AGENTGUARD / ASSURANCE RUN</span>
-              <StatusTag value={artifact.status} />
+              {artifact ? <StatusTag value={artifact.status} /> : <Tag value={connectionState.replaceAll("_", " ")} severity={connectionSeverity(connectionState)} rounded />}
             </div>
-            <h1 className="mt-2 truncate text-2xl font-semibold tracking-tight text-slate-50">{artifact.incidentId ?? artifact.runId}</h1>
-            <p className="mt-1 text-sm text-slate-400">{artifact.contract}</p>
+            <h1 className="mt-2 truncate text-2xl font-semibold tracking-tight text-slate-50">{title}</h1>
+            <p className="mt-1 text-sm text-slate-400">{contract}</p>
             <div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-500">
-              <span className="inline-flex items-center gap-1.5"><FiFileText /> Run {artifact.runId}</span>
-              <span className="inline-flex items-center gap-1.5"><FiClock /> {new Date(artifact.generatedAt).toLocaleString()}</span>
+              <span className="inline-flex items-center gap-1.5"><FiFileText /> Run {run?.runId ?? artifact?.runId ?? "n/a"}</span>
+              <span className="inline-flex items-center gap-1.5"><FiWifi /> {connectionState.replaceAll("_", " ")}</span>
+              {timestamp ? <span className="inline-flex items-center gap-1.5"><FiClock /> {formatAssuranceTimestamp(timestamp)}</span> : null}
             </div>
           </div>
         </div>
       </div>
-      <div className={`ag-verdict ${artifact.verdict.toLowerCase()}`}>
+      <div className={`ag-verdict ${artifact ? artifact.verdict.toLowerCase() : "warn"}`}>
         <span className="eyebrow">FINAL VERDICT</span>
-        <div className="mt-2 text-4xl font-bold tracking-tight">{artifact.verdict}</div>
+        <div className="mt-2 text-4xl font-bold tracking-tight">{artifact?.verdict ?? "LIVE"}</div>
         <div className="mt-1 text-sm font-medium opacity-80">
-          {artifact.status === "RECOVERED" ? "Recovered after failure" : artifact.status === "EXHAUSTED" ? "Recovery exhausted" : artifact.summary}
+          {artifact
+            ? artifact.status === "RECOVERED"
+              ? "Recovered after failure"
+              : artifact.status === "EXHAUSTED"
+                ? "Recovery exhausted"
+                : artifact.summary
+            : "Awaiting final AssuranceArtifact from AgentGuard"}
         </div>
       </div>
     </div>

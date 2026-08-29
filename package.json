@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "trueforge:health": "tsx src/trueforge/health.ts",
     "trueforge:probe": "tsx src/trueforge/probe.ts",
+    "api:dev": "tsx src/live/server.ts",
     "verify:real-mcp": "tsx scripts/verify-real-mcp.ts",
     "verify:chaos-mcp": "tsx scripts/verify-chaos-mcp.ts",
     "verify:recovery-chaos": "tsx scripts/verify-recovery-chaos.ts",

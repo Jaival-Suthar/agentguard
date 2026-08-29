@@ -1,7 +1,31 @@
 import { FiCheckCircle, FiShield, FiXCircle } from "react-icons/fi";
-import type { AssuranceArtifact } from "../types";
+import type { AssuranceArtifact, LiveConnectionState } from "../types";
 
-export function VerdictPanel({ artifact }: { artifact: AssuranceArtifact }) {
+export function VerdictPanel({
+  artifact,
+  connectionState,
+}: {
+  artifact: AssuranceArtifact | null;
+  connectionState: LiveConnectionState;
+}) {
+  if (!artifact) {
+    return (
+      <div className="ag-verdict-panel">
+        <div className="flex items-start gap-4">
+          <div className="verdict-icon"><FiShield size={28} /></div>
+          <div className="min-w-0 flex-1">
+            <div className="eyebrow">ASSURANCE RESULT</div>
+            <div className="mt-1 flex flex-wrap items-center gap-3">
+              <h2 className="text-2xl font-bold text-slate-50">{connectionState}</h2>
+              <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs font-medium text-slate-300">Live run</span>
+            </div>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">AgentGuard is still processing the execution. The final PASS or FAIL will come from the assurance artifact once verification completes.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const pass = artifact.verdict === "PASS";
   return (
     <div className={`ag-verdict-panel ${pass ? "pass" : "fail"}`}>

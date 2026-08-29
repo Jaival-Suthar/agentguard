@@ -6,6 +6,12 @@ export default defineConfig({
   publicDir: "../data",
   server: {
     port: 5174,
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:8780",
+        changeOrigin: true,
+      },
+    },
   },
   preview: {
     port: 4174,
