@@ -6,7 +6,10 @@ import {
   executeWithRecovery,
   RecoveryExhaustedError,
 } from "../src/recovery/index.js";
-import { RunStore, type RunMetadata } from "../src/trueforge/run-store.js";
+import {
+  RunStore,
+  type RunMetadata,
+} from "../src/trueforge/run-store.js";
 import { normalizeTrueForgeObservations } from "../src/verifier/trueforge-observations.js";
 import {
   verifyExecutionEvidence,
@@ -15,31 +18,42 @@ import {
 import { verifyObservations } from "../src/verifier/verify.js";
 import type { VerificationObservation } from "../src/verifier/types.js";
 import type { RecordedTrueForgeEvent } from "../src/events/types.js";
+import { buildAssuranceArtifact } from "../src/assurance/index.js";
+import { evaluatePolicy } from "../src/policy/evaluate.js";
 
 const baseUrl = (
-  process.env.TRUEFORGE_BASE_URL?.trim() || "http://localhost:8791"
+  process.env.TRUEFORGE_BASE_URL?.trim() ||
+  "http://localhost:8791"
 ).replace(/\/+$/, "");
 
-const modelName = process.env.TRUEFORGE_MODEL_NAME?.trim();
-const agentName = process.env.TRUEFORGE_AGENT_NAME?.trim();
+const modelName =
+  process.env.TRUEFORGE_MODEL_NAME?.trim();
+
+const agentName =
+  process.env.TRUEFORGE_AGENT_NAME?.trim();
 
 const mcpServerName =
   process.env.TRUEFORGE_MCP_SERVER_NAME?.trim() ||
   "incident.lookup.chaos";
 
 const incidentId =
-  process.env.TRUEFORGE_INCIDENT_ID?.trim() || "INC-042";
+  process.env.TRUEFORGE_INCIDENT_ID?.trim() ||
+  "INC-042";
 
 const contractPath =
   process.env.TRUEFORGE_RECOVERY_CONTRACT?.trim() ||
   "contracts/fixtures/chaos-incident-investigation.yaml";
 
 if (!modelName) {
-  throw new Error("Missing required environment variable TRUEFORGE_MODEL_NAME");
+  throw new Error(
+    "Missing required environment variable TRUEFORGE_MODEL_NAME",
+  );
 }
 
 if (!agentName) {
-  throw new Error("Missing required environment variable TRUEFORGE_AGENT_NAME");
+  throw new Error(
+    "Missing required environment variable TRUEFORGE_AGENT_NAME",
+  );
 }
 
 const resolvedModelName = modelName;
@@ -48,14 +62,26 @@ const resolvedAgentName = agentName;
 const EXPECTED_CHAOS_ACTION =
   `mcp:${mcpServerName}:lookup_incident`;
 
-const contract = await loadExecutionContract(contractPath);
+const contract =
+  await loadExecutionContract(contractPath);
+
+const policyDecision = evaluatePolicy(
+  EXPECTED_CHAOS_ACTION,
+  {
+    contract,
+    source: "verify-recovery-chaos",
+    actor: resolvedAgentName,
+  },
+);
 
 const client = new TrueForge({
   baseUrl,
   timeoutInSeconds: 600,
 });
 
-const runId = new Date().toISOString().replace(/[:.]/g, "-");
+const runId =
+  new Date().toISOString().replace(/[:.]/g, "-");
+
 const store = new RunStore(runId);
 
 await store.init();
@@ -71,7 +97,9 @@ const metadata: RunMetadata = {
 };
 
 const eventTypes = new Set<string>();
-const allObservations: VerificationObservation[] = [];
+
+const allObservations: VerificationObservation[] =
+  [];
 
 let nextAttemptNumber = 1;
 
@@ -101,11 +129,36 @@ interface AttemptExecution {
   report: EvidenceVerificationReport;
 }
 
-async function runAttempt(attemptNumber: number): Promise<AttemptExecution> {
-  const { data: savedAgents } = await client.agents.list();
+class RecoveryVerificationError extends Error {
+  readonly attempt: number;
+  readonly report: EvidenceVerificationReport;
+  readonly observations: VerificationObservation[];
+
+  constructor(
+    attempt: number,
+    report: EvidenceVerificationReport,
+    observations: VerificationObservation[],
+  ) {
+    super(
+      `Recovery attempt ${attempt} produced a ${report.verdict} evidence verdict.`,
+    );
+
+    this.name = "RecoveryVerificationError";
+    this.attempt = attempt;
+    this.report = report;
+    this.observations = observations;
+  }
+}
+
+async function runAttempt(
+  attemptNumber: number,
+): Promise<AttemptExecution> {
+  const { data: savedAgents } =
+    await client.agents.list();
 
   const savedAgent = savedAgents.find(
-    (agent) => agent.name === resolvedAgentName,
+    (agent) =>
+      agent.name === resolvedAgentName,
   );
 
   if (!savedAgent) {
@@ -114,7 +167,8 @@ async function runAttempt(attemptNumber: number): Promise<AttemptExecution> {
     );
   }
 
-  const savedMcpServers = savedAgent.manifest.mcpServers ?? [];
+  const savedMcpServers =
+    savedAgent.manifest.mcpServers ?? [];
 
   if (savedMcpServers.length === 0) {
     throw new Error(
@@ -122,20 +176,22 @@ async function runAttempt(attemptNumber: number): Promise<AttemptExecution> {
     );
   }
 
-  const configuredMcpServers = savedMcpServers.map((server) => {
-    if (server.name === "incident.lookup") {
-      return {
-        ...server,
-        name: mcpServerName,
-      };
-    }
+  const configuredMcpServers =
+    savedMcpServers.map((server) => {
+      if (server.name === "incident.lookup") {
+        return {
+          ...server,
+          name: mcpServerName,
+        };
+      }
 
-    return server;
-  });
+      return server;
+    });
 
   if (
     !configuredMcpServers.some(
-      (server) => server.name === mcpServerName,
+      (server) =>
+        server.name === mcpServerName,
     )
   ) {
     throw new Error(
@@ -151,32 +207,43 @@ async function runAttempt(attemptNumber: number): Promise<AttemptExecution> {
     mcpServers: configuredMcpServers,
   };
 
-  const { data: session } = await client.sessions.create({
-    agent: {
-      spec: sessionAgentSpec,
-    },
-  });
+  const { data: session } =
+    await client.sessions.create({
+      agent: {
+        spec: sessionAgentSpec,
+      },
+    });
 
   metadata.sessionId = session.id;
 
-  const rawEvents: Array<Record<string, unknown>> = [];
+  const rawEvents: Array<
+    Record<string, unknown>
+  > = [];
 
-  const stream = await client.sessions.createTurnStream(session.id, {
-    input: [
+  const stream =
+    await client.sessions.createTurnStream(
+      session.id,
       {
-        type: "user.message",
-        content: [
+        input: [
           {
-            type: "text",
-            text: prompt,
+            type: "user.message",
+            content: [
+              {
+                type: "text",
+                text: prompt,
+              },
+            ],
           },
         ],
       },
-    ],
-  });
+    );
 
-  for await (const { data: event } of stream.withMetadata()) {
-    const receivedAt = new Date().toISOString();
+  for await (
+    const { data: event } of
+      stream.withMetadata()
+  ) {
+    const receivedAt =
+      new Date().toISOString();
 
     const rawEvent =
       event as unknown as Record<string, unknown>;
@@ -201,29 +268,28 @@ async function runAttempt(attemptNumber: number): Promise<AttemptExecution> {
   }
 
   /*
-   * IMPORTANT:
+   * Do not reject a turn merely because
+   * TrueForge reports turn.status === "error".
    *
-   * Do not reject a turn merely because TrueForge reports
-   * turn.status === "error".
-   *
-   * A failed Chaos turn is itself evidence that AgentGuard
-   * must normalize and verify. Recovery needs to see that
-   * failed evidence so that the verifier can decide whether
-   * the attempt failed and therefore needs a retry.
+   * A failed Chaos turn is evidence that AgentGuard
+   * must normalize and verify. Recovery needs to see
+   * that failed evidence so the verifier can decide
+   * whether the attempt requires a retry.
    */
-
   const observations =
     normalizeTrueForgeObservations(rawEvents);
 
-  const report = verifyExecutionEvidence(
-    contract,
-    observations,
-    {
-      targetIncidentId: incidentId,
-      mcpIncidentAction: EXPECTED_CHAOS_ACTION,
-      requireSandboxAnalysis: false,
-    },
-  );
+  const report =
+    verifyExecutionEvidence(
+      contract,
+      observations,
+      {
+        targetIncidentId: incidentId,
+        mcpIncidentAction:
+          EXPECTED_CHAOS_ACTION,
+        requireSandboxAnalysis: false,
+      },
+    );
 
   attemptReports.push({
     attempt: attemptNumber,
@@ -247,24 +313,34 @@ async function runAttempt(attemptNumber: number): Promise<AttemptExecution> {
   };
 }
 
-class RecoveryVerificationError extends Error {
-  readonly attempt: number;
-  readonly report: EvidenceVerificationReport;
-  readonly observations: VerificationObservation[];
+function collectAttemptObservations(): void {
+  allObservations.length = 0;
 
-  constructor(
-    attempt: number,
-    report: EvidenceVerificationReport,
-    observations: VerificationObservation[],
+  for (
+    let index = 0;
+    index < attemptReports.length;
+    index += 1
   ) {
-    super(
-      `Recovery attempt ${attempt} produced a ${report.verdict} evidence verdict.`,
+    const attempt =
+      attemptReports[index];
+
+    if (!attempt) {
+      continue;
+    }
+
+    allObservations.push(
+      ...attempt.observations,
     );
 
-    this.name = "RecoveryVerificationError";
-    this.attempt = attempt;
-    this.report = report;
-    this.observations = observations;
+    const isLastAttempt =
+      index === attemptReports.length - 1;
+
+    if (!isLastAttempt) {
+      allObservations.push({
+        kind: "retry",
+        retryCount: index + 1,
+      });
+    }
   }
 }
 
@@ -273,12 +349,24 @@ function printReport(
   verificationVerdict: string,
 ): void {
   console.log("");
-  console.log("AgentGuard Recovery + Chaos Verification");
-  console.log("=========================================");
-  console.log(`Contract: ${contract.name}`);
-  console.log(`Evidence: ${store.jsonlPath}`);
-  console.log(`Target incident: ${incidentId}`);
-  console.log(`Expected action: ${EXPECTED_CHAOS_ACTION}`);
+  console.log(
+    "AgentGuard Recovery + Chaos Verification",
+  );
+  console.log(
+    "=========================================",
+  );
+  console.log(
+    `Contract: ${contract.name}`,
+  );
+  console.log(
+    `Evidence: ${store.jsonlPath}`,
+  );
+  console.log(
+    `Target incident: ${incidentId}`,
+  );
+  console.log(
+    `Expected action: ${EXPECTED_CHAOS_ACTION}`,
+  );
   console.log("");
 
   console.log(
@@ -329,7 +417,9 @@ function printReport(
 
     console.log(
       `[EVIDENCE] ${item.type} source=${item.source}${
-        correlation ? ` ${correlation}` : ""
+        correlation
+          ? ` ${correlation}`
+          : ""
       }`,
     );
   }
@@ -345,6 +435,102 @@ function printReport(
   console.log("");
 }
 
+function printAssurance(
+  assurance: ReturnType<
+    typeof buildAssuranceArtifact
+  >,
+): void {
+  console.log("");
+  console.log("AgentGuard Assurance");
+  console.log("====================");
+  console.log(
+    `Run: ${assurance.runId}`,
+  );
+  console.log(
+    `Contract: ${assurance.contract}`,
+  );
+  console.log(
+    `Incident: ${assurance.incidentId ?? "n/a"}`,
+  );
+  console.log("");
+
+  console.log(
+    `Policy        ${
+      assurance.policy.status === "PASS"
+        ? "✓"
+        : "✗"
+    } ${assurance.policy.summary}`,
+  );
+
+  console.log(
+    `Execution     ${
+      assurance.execution.status ===
+      "PASS"
+        ? "✓"
+        : "✗"
+    } ${assurance.execution.summary}`,
+  );
+
+  console.log(
+    `Recovery      ${
+      assurance.recovery.status ===
+        "RECOVERED" ||
+      assurance.recovery.status ===
+        "NOT_REQUIRED"
+        ? "✓"
+        : "✗"
+    } ${assurance.recovery.status}`,
+  );
+
+  console.log(
+    `Evidence      ${
+      assurance.evidence.status ===
+      "PASS"
+        ? "✓"
+        : "✗"
+    } ${assurance.evidence.summary}`,
+  );
+
+  console.log(
+    `Contract      ${
+      assurance.contractVerification
+        .status === "PASS"
+        ? "✓"
+        : "✗"
+    } ${assurance.contractVerification.summary}`,
+  );
+
+  console.log("");
+
+  if (
+    assurance.failureReasons.length >
+    0
+  ) {
+    console.log("Failure reasons:");
+
+    for (
+      const reason of
+        assurance.failureReasons
+    ) {
+      console.log(`  - ${reason}`);
+    }
+
+    console.log("");
+  }
+
+  console.log(
+    `FINAL VERDICT: ${assurance.verdict}`,
+  );
+}
+
+let recoveryResult:
+  | Awaited<
+      ReturnType<
+        typeof executeWithRecovery<AttemptExecution>
+      >
+    >
+  | undefined;
+
 try {
   console.log(`Run ID: ${runId}`);
   console.log(`TrueForge: ${baseUrl}`);
@@ -357,49 +543,36 @@ try {
   );
   console.log("");
 
-  const recovery = await executeWithRecovery(
-    contract,
-    () => {
-      const attemptNumber = nextAttemptNumber;
-      nextAttemptNumber += 1;
+  recoveryResult =
+    await executeWithRecovery(
+      contract,
+      () => {
+        const attemptNumber =
+          nextAttemptNumber;
 
-      return runAttempt(attemptNumber);
-    },
-    {
-      onRetry: async (retry, error) => {
-        console.log(
-          `[RECOVERY] retry=${retry} reason=${
-            error instanceof Error
-              ? error.message
-              : String(error)
-          }`,
+        nextAttemptNumber += 1;
+
+        return runAttempt(
+          attemptNumber,
         );
       },
-    },
-  );
+      {
+        onRetry: async (
+          retry,
+          error,
+        ) => {
+          console.log(
+            `[RECOVERY] retry=${retry} reason=${
+              error instanceof Error
+                ? error.message
+                : String(error)
+            }`,
+          );
+        },
+      },
+    );
 
-    for (let index = 0; index < attemptReports.length; index += 1) {
-      const attempt = attemptReports[index];
-
-      if (!attempt) {
-        continue;
-      }
-
-      allObservations.push(...attempt.observations);
-
-      const isLastAttempt = index === attemptReports.length - 1;
-
-      if (!isLastAttempt) {
-        allObservations.push({
-          kind: "retry",
-          retryCount: index + 1,
-          data: {
-            recovered: recovery.recovered,
-            attempts: recovery.attempts,
-          },
-        });
-      }
-    }
+  collectAttemptObservations();
 
   const finalEvidenceReport =
     verifyExecutionEvidence(
@@ -407,7 +580,8 @@ try {
       allObservations,
       {
         targetIncidentId: incidentId,
-        mcpIncidentAction: EXPECTED_CHAOS_ACTION,
+        mcpIncidentAction:
+          EXPECTED_CHAOS_ACTION,
         requireSandboxAnalysis: false,
       },
     );
@@ -418,48 +592,57 @@ try {
       allObservations,
     );
 
-  if (finalEvidenceReport.verdict !== "PASS") {
-    throw new Error(
-      `Recovery completed, but final evidence verification returned ${finalEvidenceReport.verdict}.`,
-    );
-  }
+  const assurance =
+    buildAssuranceArtifact({
+      runId,
+      contractName: contract.name,
+      incidentId,
+      policyVerdict:
+        policyDecision.decision,
+      executionFailed: false,
+      recovery: {
+        attempts:
+          recoveryResult.attempts,
+        retries:
+          recoveryResult.retries,
+        recovered:
+          recoveryResult.recovered,
+        exhausted: false,
+        maxRetries:
+          contract.limits.maxRetries,
+      },
+      evidenceReport:
+        finalEvidenceReport,
+      contractReport:
+        finalContractReport,
+      generatedAt:
+        metadata.startedAt,
+    });
 
-  if (finalContractReport.verdict === "FAIL") {
-    throw new Error(
-      "Recovery completed, but contract verification returned FAIL.",
-    );
-  }
+  printAssurance(assurance);
 
   printReport(
     finalEvidenceReport,
     finalContractReport.verdict,
   );
 
+  if (assurance.verdict !== "PASS") {
+    throw new Error(
+      `Assurance verification returned ${assurance.verdict}.`,
+    );
+  }
+
+  console.log("");
   console.log("RECOVERED → PASS");
   console.log("");
-  console.log(`Evidence: ${store.jsonlPath}`);
+  console.log(
+    `Evidence: ${store.jsonlPath}`,
+  );
 } catch (error) {
+  collectAttemptObservations();
+
   const exhausted =
     error instanceof RecoveryExhaustedError;
-
-    for (let index = 0; index < attemptReports.length; index += 1) {
-      const attempt = attemptReports[index];
-
-      if (!attempt) {
-        continue;
-      }
-
-      allObservations.push(...attempt.observations);
-
-      const isLastAttempt = index === attemptReports.length - 1;
-
-      if (!isLastAttempt) {
-        allObservations.push({
-          kind: "retry",
-          retryCount: index + 1,
-        });
-      }
-    }
 
   const finalEvidenceReport =
     verifyExecutionEvidence(
@@ -467,7 +650,8 @@ try {
       allObservations,
       {
         targetIncidentId: incidentId,
-        mcpIncidentAction: EXPECTED_CHAOS_ACTION,
+        mcpIncidentAction:
+          EXPECTED_CHAOS_ACTION,
         requireSandboxAnalysis: false,
       },
     );
@@ -477,6 +661,56 @@ try {
       contract,
       allObservations,
     );
+
+  const recovery = recoveryResult
+    ? {
+        attempts:
+          recoveryResult.attempts,
+        retries:
+          recoveryResult.retries,
+        recovered:
+          recoveryResult.recovered,
+        exhausted: false,
+      }
+    : {
+        attempts: exhausted
+          ? error.attempts
+          : attemptReports.length,
+        retries: exhausted
+          ? error.retries
+          : Math.max(
+              0,
+              attemptReports.length - 1,
+            ),
+        recovered: false,
+        exhausted,
+      };
+
+  const assurance =
+    buildAssuranceArtifact({
+      runId,
+      contractName: contract.name,
+      incidentId,
+      policyVerdict:
+        policyDecision.decision,
+      executionFailed: true,
+      recovery: {
+        attempts: recovery.attempts,
+        retries: recovery.retries,
+        recovered: recovery.recovered,
+        exhausted: recovery.exhausted,
+        maxRetries:
+          contract.limits.maxRetries,
+      },
+      evidenceReport:
+        finalEvidenceReport,
+      contractReport:
+        finalContractReport,
+      generatedAt:
+        metadata.startedAt,
+    });
+
+  printAssurance(assurance);
 
   printReport(
     finalEvidenceReport,
@@ -492,15 +726,18 @@ try {
   );
 
   console.error(
-    exhausted
+    recovery.exhausted
       ? "RECOVERY EXHAUSTED → FAIL"
       : "RECOVERY INTEGRATION FAILED → FAIL",
   );
 
   process.exitCode = 1;
 } finally {
-  metadata.eventTypes = [...eventTypes].sort();
-  metadata.completedAt = new Date().toISOString();
+  metadata.eventTypes =
+    [...eventTypes].sort();
+
+  metadata.completedAt =
+    new Date().toISOString();
 
   metadata.finalStatus =
     process.exitCode === 1
