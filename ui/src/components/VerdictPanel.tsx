@@ -16,10 +16,10 @@ export function VerdictPanel({
           <div className="min-w-0 flex-1">
             <div className="eyebrow">ASSURANCE RESULT</div>
             <div className="mt-1 flex flex-wrap items-center gap-3">
-              <h2 className="text-2xl font-bold text-slate-50">{connectionState}</h2>
-              <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs font-medium text-slate-300">Live run</span>
+              <h2 className="text-2xl font-bold text-slate-900">{connectionState}</h2>
+              <span className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600">Live run</span>
             </div>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">AgentGuard is still processing the execution. The final PASS or FAIL will come from the assurance artifact once verification completes.</p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">AgentGuard is still processing the execution. The final PASS or FAIL will come from the assurance artifact once verification completes.</p>
           </div>
         </div>
       </div>
@@ -33,8 +33,8 @@ export function VerdictPanel({
         <div className="verdict-icon">{pass ? <FiCheckCircle size={28} /> : <FiXCircle size={28} />}</div>
         <div className="min-w-0 flex-1">
           <div className="eyebrow">ASSURANCE RESULT</div>
-          <div className="mt-1 flex flex-wrap items-center gap-3"><h2 className="text-2xl font-bold text-slate-50">{artifact.verdict}</h2><span className="rounded-full border border-white/10 px-2.5 py-1 text-xs font-medium text-slate-300">{artifact.status.replaceAll("_", " ")}</span></div>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">{artifact.summary}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-3"><h2 className="text-2xl font-bold text-slate-900">{artifact.verdict}</h2><span className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600">{artifact.status.replaceAll("_", " ")}</span></div>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{artifact.summary}</p>
         </div>
       </div>
       <div className="mt-5 grid gap-2 md:grid-cols-3">

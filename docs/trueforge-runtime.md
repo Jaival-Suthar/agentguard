@@ -1,177 +1,234 @@
-# PR #2 — TrueForge Runtime Proof
+# TrueForge Runtime
 
-## Goal
+## Purpose
 
-Prove that AgentGuard can observe a **real** TrueForge execution without inventing an event model.
+TrueForge is the execution harness used by AgentGuard.
 
-This PR captures evidence only.
+AgentGuard does not replace TrueForge's agent loop. Instead, AgentGuard consumes the real execution trajectory produced by TrueForge and applies deterministic evidence, policy, contract, recovery, and assurance logic around it.
 
-## What this PR proves
+The relationship is:
 
-1. A TrueForge server is reachable.
-2. A configured model can execute through TrueForge.
-3. The SDK can create a session.
-4. The SDK can stream a turn.
-5. Every streamed event is persisted unchanged as JSONL.
-6. The session id is saved for later reconnect/session experiments.
-
-## Official runtime modes
-
-TrueForge documents two development paths:
-
-* Local standalone: `npx @truefoundry/trueforge` using SQLite on localhost.
-* Hosted Docker Compose: upstream TrueForge with server + Postgres + Redis.
-
-AgentGuard supports either because the SDK only needs a `TRUEFORGE_BASE_URL`.
-
-## Recommended security setup
-
-For this hackathon:
-
-* clone upstream TrueForge into `.runtime/trueforge`
-* keep it ignored by Git
-* run the hosted Docker Compose stack locally
-* use synthetic data only
-* never mount personal folders into agent-facing containers unless explicitly required
-* never commit upstream `.env`
-
-## Step A — Install SDK dependencies
-
-```powershell
-npm install
-npm install @truefoundry/trueforge-sdk
-npm install -D typescript tsx @types/node
-npm install dotenv
+```text
+TrueForge
+   ↓
+real agent execution
+   ↓
+MCP / sandbox / runtime events
+   ↓
+AgentGuard
+   ↓
+verification + policy + recovery + assurance
 ```
 
-## Step B — Configure environment
+---
 
-Copy:
+## What AgentGuard Uses TrueForge For
 
-```powershell
-Copy-Item .env.example .env
+The current integration supports:
+
+* saved agent configuration
+* session creation
+* real turn execution
+* streamed runtime events
+* real MCP interaction
+* Daytona sandbox execution
+* raw JSONL evidence capture
+* execution observation
+* recovery execution
+
+Relevant entry points include:
+
+```text
+src/trueforge/probe.ts
+src/trueforge/adapter.ts
+src/investigator/investigate.ts
+src/recovery/execute.ts
 ```
 
-Set:
+---
 
-```env
+## Runtime Configuration
+
+The current `.env.example` supports configuration including:
+
+```text
 TRUEFORGE_BASE_URL=http://localhost:8791
-TRUEFORGE_MODEL_NAME=<exact configured provider/model name>
+TRUEFORGE_MODEL_NAME=<configured provider/model>
+TRUEFORGE_AGENT_NAME=<saved agent name>
+TRUEFORGE_AGENT_INSTRUCTIONS=...
+TRUEFORGE_PROMPT=...
+TRUEFORGE_INCIDENT_ID=INC-042
+TRUEFORGE_MCP_SERVER_NAME=incident.lookup.chaos
+DAYTONA_API_KEY=
 ```
 
-For the hosted Docker setup, `8791` is the host-facing TrueForge port and `8790` is the container port.
+The Daytona API key is required only for the sandbox integration and must not be committed to source control.
 
-The model name must match the fully qualified `provider/model` configured in TrueForge.
+Use the least-privileged Daytona credential required by the configured TrueForge sandbox workflow.
 
-## Step C — Start TrueForge
+---
 
-### Option 1: Official local mode
+## TrueForge Docker Runtime
+
+The repository provides helper scripts for a local TrueForge runtime:
+
+```text
+scripts/setup-trueforge-docker.ps1
+scripts/start-trueforge-docker.ps1
+scripts/stop-trueforge-docker.ps1
+```
+
+The expected local endpoint is:
+
+```text
+http://localhost:8791
+```
+
+The TrueForge container listens on its configured internal port while the host-facing endpoint is used by AgentGuard.
+
+---
+
+## Sandbox Provider
+
+TrueForge uses Daytona for sandbox execution in the current AgentGuard path.
+
+The sandbox flow is:
+
+```text
+TrueForge
+   ↓
+Daytona provider
+   ↓
+TrueForge sandbox image
+   ↓
+real isolated sandbox
+   ↓
+code execution
+   ↓
+result
+```
+
+The TrueForge sandbox image is built/registered as part of the configured Daytona provider workflow.
+
+The sandbox is used for deterministic analysis rather than allowing the agent to execute arbitrary analysis directly on the development host.
+
+---
+
+## Incident Investigation
+
+The primary workload is:
 
 ```powershell
-npx @truefoundry/trueforge
+npm run investigate:incident
 ```
 
-Open `http://localhost:8790`.
+The workflow:
 
-Configure one model provider in the UI.
+1. loads the configured TrueForge agent
+2. creates a TrueForge session
+3. starts the investigation turn
+4. reaches the configured MCP tools
+5. captures runtime evidence
+6. performs the configured sandbox analysis
+7. records the resulting trajectory
 
-### Option 2: Hosted Docker mode
+The resulting raw evidence is stored under:
 
-Use:
+```text
+data/runs/
+```
+
+---
+
+## Sandbox Investigation Mode
+
+The repository also provides:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/setup-trueforge-docker.ps1
-powershell -ExecutionPolicy Bypass -File scripts/start-trueforge-docker.ps1
+npm run investigate:incident:sandbox
 ```
 
-Then configure a model provider through the UI at the hosted URL.
+This path preserves the saved TrueForge agent configuration while enabling the deterministic sandbox-analysis portion of the investigation workflow.
 
-## Step D — Health check
+The important distinction is that the sandbox operation is a real execution path, not merely a synthetic `SANDBOX_EXECUTION` event.
+
+---
+
+## Health Check
 
 ```powershell
 npm run trueforge:health
 ```
 
-Expected output includes HTTP status for `/healthz` and `/`.
+Use this before a live demonstration to confirm that the configured TrueForge server is reachable.
 
-## Step E — Stream a real turn
+---
+
+## Runtime Probe
 
 ```powershell
 npm run trueforge:probe
 ```
 
-The probe will:
+The probe captures the runtime surface needed to validate session creation and event streaming.
 
-* create one session
-* stream one turn
-* print model deltas live
-* write every raw SDK event into `data/runs/<timestamp>.jsonl`
-* write metadata into `data/runs/<timestamp>.json`
+---
 
-Do not edit the evidence files.
+## Evidence Capture
 
-## Evidence expected from this PR
+A live investigation produces raw JSONL evidence under:
 
 ```text
-data/runs/
-
-  2026-....jsonl
-
-  2026-....json
+data/runs/<run-id>.jsonl
 ```
 
-Those raw files become the source material for PR #3, where we design the normalized `ExecutionEvent` adapter from observed reality.
+AgentGuard retains the raw runtime records and derives normalized execution semantics from them.
 
-## Acceptance criteria
+The evidence path is therefore:
 
-* [ ] TrueForge reachable
-* [ ] One configured model responds
-* [ ] Session created through SDK
-* [ ] Turn streamed through SDK
-* [ ] `turn.created` observed
-* [ ] model output streamed
-* [ ] `turn.done` observed
-* [ ] JSONL evidence generated
-* [ ] Session id persisted
-
-MCP, sandbox, approval, subagents, and reconnect are configured and demonstrated incrementally on this same runtime in later commits within the broader runtime branch if needed, but **this first runtime proof must establish the event surface before we model it.**
-
-
-## Sandbox capability proof
-
-The capability branch adds an opt-in sandbox mode to the incident investigator. It overrides only the session runtime config and leaves the saved agent unchanged.
-
-Run:
-
-```powershell
-npm run investigate:incident:sandbox
+```text
+TrueForge
+   ↓
+raw JSONL
+   ↓
+TrueForge adapter
+   ↓
+normalized observations
+   ↓
+verification
 ```
 
-In sandbox mode the agent is instructed to use TrueForge's `Sandbox.exec` tool for a deterministic evidence-analysis step. AgentGuard records the raw TrueForge trajectory and normalizes `sandbox.created`, the `exec` tool call as `sandbox:execute`, and its `tool.response`.
+---
 
-### Provider requirement
+## Security Boundary
 
-TrueForge must report the sandbox capability as enabled. In standalone mode this comes from TrueForge's local sandbox support probe. In distributed/Docker mode, configure the supported sandbox provider before enabling the feature. AgentGuard deliberately fails at session admission rather than silently falling back to host execution.
+The TrueForge runtime should be operated with:
 
-## Sandbox provider setup
+* synthetic incident data
+* least-privileged credentials
+* no host secrets
+* no browser profiles
+* no personal filesystem access
+* no unnecessary network exposure
+* isolated sandbox execution
 
-Enabling `config.sandbox.enabled` is not enough: TrueForge must also have a sandbox provider configured for the tenant. The current TrueForge runtime exposes Daytona as the sandbox provider.
+The Daytona credential must never be included in committed source, screenshots, recordings, or documentation.
 
-Configure it once with the AgentGuard helper:
+---
 
-```powershell
-# Put the real key in your local .env only.
-DAYTONA_API_KEY=...
+## Current Status
 
-npm run trueforge:configure-sandbox
-```
+The current AgentGuard TrueForge integration has been validated for:
 
-The helper calls TrueForge's sandbox-provider settings endpoint and stores the Daytona credential in TrueForge. AgentGuard never prints or records the API key.
+* TrueForge session creation
+* real turn execution
+* real MCP interaction
+* raw JSONL evidence capture
+* Daytona provider configuration
+* TrueForge sandbox image setup
+* real Daytona sandbox execution
+* deterministic sandbox analysis
+* evidence correlation
+* recovery execution
 
-After configuration, verify the hero path with:
-
-```powershell
-npm run investigate:incident:sandbox
-```
-
-If the run still reports `sandbox is enabled but no sandbox provider is configured`, the provider was not configured in the same TrueForge instance referenced by `TRUEFORGE_BASE_URL`.
+The remaining validation work is focused on repeatable final-demo execution rather than adding another runtime capability.

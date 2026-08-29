@@ -1,80 +1,67 @@
-import type { RunDetail, RunSummary } from "./types";
+import type { ExecutionEvent, RunDetail, RunSummary } from "./types";
 
 interface RunListResponse {
   runs: RunSummary[];
 }
 
 function jsonHeaders(): HeadersInit {
-  return {
-    Accept: "application/json",
-  };
+  return { Accept: "application/json" };
 }
 
 export async function listRuns(): Promise<RunSummary[]> {
-  const response = await fetch("/api/runs", {
-    cache: "no-store",
-    headers: jsonHeaders(),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Unable to list runs: ${response.status}`);
-  }
-
-  const payload =
-    (await response.json()) as RunListResponse;
-
+  const response = await fetch("/api/runs", { cache: "no-store", headers: jsonHeaders() });
+  if (!response.ok) throw new Error(`Unable to list runs: ${response.status}`);
+  const payload = (await response.json()) as RunListResponse;
   return payload.runs ?? [];
 }
 
-export async function loadRun(
-  runId: string,
-): Promise<RunDetail> {
-  const response = await fetch(
-    `/api/runs/${encodeURIComponent(runId)}`,
-    {
-      cache: "no-store",
-      headers: jsonHeaders(),
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(`Unable to load run ${runId}: ${response.status}`);
-  }
-
+export async function loadRun(runId: string): Promise<RunDetail> {
+  const response = await fetch(`/api/runs/${encodeURIComponent(runId)}`, {
+    cache: "no-store",
+    headers: jsonHeaders(),
+  });
+  if (!response.ok) throw new Error(`Unable to load run ${runId}: ${response.status}`);
   return (await response.json()) as RunDetail;
 }
 
 export function watchRun(
   runId: string,
   onSnapshot: (snapshot: RunDetail) => void,
+  onEvent: (event: ExecutionEvent) => void,
+  onStatus: (summary: RunSummary) => void,
   onReconnect: () => void,
   onError: (error: Error) => void,
 ): () => void {
-  const source = new EventSource(
-    `/api/runs/${encodeURIComponent(runId)}/events`,
-  );
+  const source = new EventSource(`/api/runs/${encodeURIComponent(runId)}/events`);
 
   source.addEventListener("snapshot", (event) => {
-    if (!(event instanceof MessageEvent)) {
-      return;
-    }
-
+    if (!(event instanceof MessageEvent)) return;
     try {
       onSnapshot(JSON.parse(event.data as string) as RunDetail);
     } catch (error) {
-      onError(
-        error instanceof Error
-          ? error
-          : new Error(String(error)),
-      );
+      onError(error instanceof Error ? error : new Error(String(error)));
     }
   });
 
-  source.addEventListener("error", () => {
-    onReconnect();
+  source.addEventListener("event", (event) => {
+    if (!(event instanceof MessageEvent)) return;
+    try {
+      onEvent(JSON.parse(event.data as string) as ExecutionEvent);
+    } catch (error) {
+      onError(error instanceof Error ? error : new Error(String(error)));
+    }
   });
 
-  return () => {
-    source.close();
-  };
+  source.addEventListener("status", (event) => {
+    if (!(event instanceof MessageEvent)) return;
+    try {
+      onStatus(JSON.parse(event.data as string) as RunSummary);
+    } catch (error) {
+      onError(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+
+  source.addEventListener("error", () => onReconnect());
+
+  return () => source.close();
 }

@@ -1,193 +1,416 @@
 # AgentGuard
 
-Runtime assurance for autonomous agents.
+AgentGuard is an assurance and verification layer for agentic execution. TrueForge runs the agent; AgentGuard determines whether the resulting execution can be trusted; the Assurance Console makes that proof visible.
 
-AgentGuard verifies whether an agent's observed execution stayed within a declared execution contract, recovered from failures, preserved required policy boundaries, and produced sufficient evidence to trust the outcome.
+This repository implements a real, end-to-end trust boundary for observed agent execution. It captures raw TrueForge evidence, normalizes the runtime events, verifies policy and evidence, builds an authoritative `AssuranceArtifact`, and presents the result in a live console.
 
-## Hackathon implementation
+## Why AgentGuard?
 
-The first implementation uses TrueForge as the execution runtime and an incident-investigation workflow as the demonstration workload.
+Agent runtimes can execute tool calls, sandbox actions, and retries that look successful at a glance but are not actually trustworthy.
+
+AgentGuard exists to answer a narrower question:
+
+- Did the execution really happen?
+- Were the right actions observed?
+- Did the required evidence and contract checks pass?
+- Can the final verdict be trusted without relying on model prose?
+
+TrueForge remains the execution engine. AgentGuard is the verification layer. The console is only a proof surface.
+
+## Screenshots
+
+No screenshot assets are currently checked in.
+
+If you add captures later, place them under `docs/screenshots/` and link them here. Suggested views:
+
+- Placeholder: Assurance Console overview
+- Placeholder: live run timeline
+- Placeholder: recovery / verification state
+- Placeholder: final PASS / FAIL verdict
+
+## Core Idea / Trust Boundary
 
 ```text
-TrueForge
-    ↓
-TrueForge Adapter
-    ↓
-Normalized Execution Events
-    ↓
-AgentGuard Core
-    ├── Contract
-    ├── Verification
-    ├── Recovery Analysis
-    ├── Evidence
-    └── Reporting
+TrueForge runs the agent
+        │
+        │ execution/runtime events
+        ▼
+AgentGuard observes and verifies
+        │
+        ├─ event normalization
+        ├─ policy enforcement
+        ├─ contract verification
+        ├─ chaos / recovery analysis
+        ├─ evidence verification
+        └─ assurance artifact creation
+        │
+        ▼
+AssuranceArtifact
+        │
+        ▼
+Assurance Console visualizes proof
 ```
 
-TrueForge is the execution substrate. AgentGuard is the assurance layer.
+The UI is not the source of truth. The final assurance result comes from AgentGuard and the `AssuranceArtifact`.
 
-## Development principles
+## Architecture
 
-- Security first: run the experimental stack in an isolated environment.
-- Least privilege: use synthetic data and avoid host credentials/files.
-- TrueForge must perform real work; AgentGuard must independently verify the execution.
-- `main` contains reviewed, working code.
-- Each coherent phase is developed on a branch and merged through a pull request.
-- Qodo review is part of the development workflow.
+The detailed architecture reference lives in [docs/architecture.md](docs/architecture.md).
 
-## Current status
+At a high level, the repository is organized around these layers:
 
-The repository foundation, TrueForge runtime proof, normalized execution events, and execution contract phases are complete. AgentGuard now applies the declared contract to observed execution evidence through a deterministic verifier.
+1. Execution via TrueForge
+2. Event observation and normalization
+3. Policy evaluation
+4. Execution contracts
+5. Chaos / failure handling
+6. Recovery
+7. Evidence verification
+8. Deterministic verification
+9. `AssuranceArtifact` creation
+10. Live API
+11. SSE stream delivery
+12. Assurance Console rendering
 
-## Real TrueForge path
+## How The System Works
 
-The current golden-path branch uses:
+1. TrueForge executes the incident-investigation workflow.
+2. AgentGuard records the raw runtime trajectory in `data/runs/`.
+3. The TrueForge adapter normalizes the observed events into AgentGuard runtime semantics.
+4. Policy, recovery, evidence, and contract verification run against the normalized observations.
+5. AgentGuard produces an authoritative `AssuranceArtifact` in `data/assurance/`.
+6. The live API serves run snapshots and SSE updates.
+7. The Assurance Console renders a bounded semantic timeline, a proof inspector, and the final verdict.
 
-- Ollama as the local model provider
-- `ollama/qwen-3-8b` as the tested local model
-- TrueForge as the execution harness
-- the synthetic `incident.lookup` MCP server for incident lookup
+## Assurance Pipeline
 
-Configure the investigator with:
+| Stage | Responsibility | Source of truth |
+| --- | --- | --- |
+| Execution | TrueForge performs the work | TrueForge runtime and raw JSONL evidence |
+| Observation | AgentGuard records and normalizes runtime events | `src/trueforge/adapter.ts`, `src/events/` |
+| Policy | Allowed / blocked / approval-required actions | `src/policy/` and `scripts/verify-policy.ts` |
+| Recovery | Retry and failure handling | `src/recovery/` and `scripts/verify-recovery-chaos.ts` |
+| Evidence | Correlated tool-call and tool-result evidence | `src/verifier/evidence.ts` and `scripts/verify-evidence.ts` |
+| Contracts | Deterministic execution-contract verification | `src/verifier/verify.ts` and `npm run verify:real-mcp` |
+| Assurance | Final verdict and summary | `src/assurance/` |
+| Visualization | Live inspection of proof | `ui/` |
 
-- `TRUEFORGE_BASE_URL=http://localhost:8791`
-- `TRUEFORGE_MODEL_NAME=ollama/qwen-3-8b`
-- `TRUEFORGE_AGENT_NAME=<the TrueForge incident-investigator agent name>`
+## Live Assurance Console
 
-Run the incident investigation with:
+The live console is implemented in `ui/` and consumes the AgentGuard live API.
+
+It provides:
+
+- run discovery from the live API
+- live run selection
+- SSE-backed updates
+- a bounded semantic timeline
+- proof inspection for the selected row
+- final artifact reconciliation when the authoritative artifact appears
+- live connection state feedback
+- a light audit-console theme
+
+Important implementation details:
+
+- `MODEL_OUTPUT_DELTA` events are intentionally excluded from the visual timeline.
+- The raw run data remains available on disk; only the timeline presentation is semantic and bounded.
+- Timestamps are preserved from the source event data and rendered as `DD MMM YYYY · HH:mm:ss.SSS IST`.
+- The console does not compute PASS / FAIL itself. It renders the `AssuranceArtifact`.
+
+## Repository Structure
 
 ```text
-npm run investigate:incident
+src/
+  assurance/              Final assurance artifact assembly
+  contract/               Execution contract loading and types
+  events/                 Normalized execution event types
+  investigator/           Incident investigation workflow and reporting
+  live/                   Live API, run snapshots, SSE stream, store
+  policy/                 Policy evaluation and gate logic
+  recovery/               Recovery execution and retry logic
+  trueforge/              TrueForge integration, adapter, health, probe
+  verifier/               Evidence and contract verification
+
+scripts/                  Verification and runtime helper scripts
+tests/                    Automated regression tests
+tools/chaos-mcp/          Synthetic Chaos MCP server
+tools/incident-mcp/       Synthetic incident MCP server
+ui/                       React Assurance Console
+data/runs/                Raw run metadata and JSONL evidence
+data/assurance/           Generated assurance artifacts
+docs/                     Architecture and verification reference docs
+docker-compose.assurance.yml  Optional AgentGuard API + UI compose path
+Dockerfile.agentguard     Container image for the AgentGuard API
 ```
 
-The run emits raw TrueForge JSONL evidence under `data/runs/`, including the real MCP interaction. Verify the exact trajectory produced by that run by passing its JSONL file to the deterministic verifier:
+## Prerequisites
 
-```text
-npm run verify:real-mcp -- data\runs\<run-id>.jsonl
-The verifier consumes the exact JSONL trajectory produced by the investigation run.
+- Node.js `>=22.14.0` as declared in `package.json`
+- npm
+- TrueForge access for the real workflow
+- Docker and Docker Compose if you want the documented container path
 
-## Planned phases
+The repository does not require a global TypeScript install. All commands are run through npm scripts.
 
-1. Repository foundation and secure local environment
-2. TrueForge runtime proof
-3. Normalized execution events
-4. Execution contract and verifier
-5. Incident-investigation scenario
-6. Chaos MCP
-7. Recovery analysis
-8. Assurance scoring and reports
-9. Final hardening and demo
+## Installation
 
-## Security
-
-Do not provide the agent access to your personal filesystem, SSH keys, browser profiles, cloud credentials, `.env` files, or other sensitive host data.
-
-The initial environment is intended for local experimentation only. Keep local TrueForge bound to localhost unless a deliberate authenticated deployment is configured.
-
-## Current phase — Real TrueForge Golden Path
-
-PR #6 proves the real TrueForge incident-investigation golden path with Ollama, MCP evidence capture, normalized tool-call correlation, evidence-derived reporting, and deterministic verification of the captured runtime trajectory.
-
-The golden path is:
-
-```text
-Real TrueForge Runtime
-        ↓
-Raw JSONL Evidence
-        ↓
-Normalized Execution Events
-        ↓
-Evidence Correlation
-        ↓
-Incident Investigation Report
-        ↓
-Deterministic Contract Verification
-        ↓
-PASS / WARN / FAIL
-
-See [`docs/contract-verifier.md`](docs/contract-verifier.md) for the verification model and current scope.
-
-### Evidence boundary
-
-AgentGuard does not treat the model's final narrative as proof of execution.
-
-The investigation produces raw TrueForge runtime evidence first. AgentGuard then derives normalized execution observations and incident facts from the observed tool-call and tool-result trajectory.
-
-The deterministic verifier evaluates those observations against the declared execution contract.
-
-Model narrative
-      ≠
-Execution evidence
-
-Raw runtime evidence
-      ↓
-Normalized observations
-      ↓
-Deterministic verification
-
-## Previous phase — Incident Investigation
-
-PR #5 adds the first end-to-end incident-investigation workload using TrueForge.
-
-It adds:
-- incident investigator workflow
-- synthetic incident MCP integration
-- evidence capture
-- evidence-derived investigation reporting
-- real tool-call correlation
-- local execution support
-
-## Current phase — Real TrueForge Golden Path
-
-PR #6 proves the incident-investigation workflow against a real local execution stack.
-
-It uses:
-- Ollama / qwen3:8b
-- TrueForge
-- the synthetic incident.lookup MCP server
-- real MCP tool execution
-- captured TrueForge JSONL evidence
-- deterministic AgentGuard verification
-
-The golden path has been verified end-to-end:
-
-TrueForge execution
-    ↓
-incident.lookup
-    ↓
-lookup_incident(INC-042)
-    ↓
-real tool response
-    ↓
-raw evidence
-    ↓
-normalized observation
-    ↓
-execution contract
-    ↓
-PASS
-## Assurance Console
-
-The repository now includes the AgentGuard Assurance Console under `ui/`. It is a proof surface, not a replacement for TrueForge: TrueForge remains responsible for agent execution, while the console renders an `AssuranceArtifact` produced by AgentGuard.
-
-Start the console locally:
-
-```text
+```powershell
+npm install
 npm install --prefix ui
+```
+
+If you are using the real TrueForge Docker path, prepare the upstream TrueForge runtime separately through the scripts under `scripts/`.
+
+## Running Locally
+
+### 1. Start TrueForge
+
+The repository supports the upstream TrueForge runtime in two ways:
+
+- Hosted Docker mode via the helper scripts in `scripts/`
+- Upstream standalone mode via `npx @truefoundry/trueforge`
+
+For the repository's golden path, the documented Docker setup uses:
+
+- TrueForge host URL: `http://localhost:8791`
+- TrueForge container port: `8790`
+
+### 2. Start the AgentGuard live API
+
+```powershell
+npm run api:dev
+```
+
+The live API listens on port `8780`.
+
+### 3. Start the Assurance Console
+
+```powershell
 npm run ui:dev
 ```
 
-Build it with:
+The Vite dev server listens on `5174` and proxies `/api` to `http://127.0.0.1:8780`.
+
+Open:
 
 ```text
+http://localhost:5174
+```
+
+## Running The Real TrueForge Workflow
+
+Configure the environment from `.env.example`:
+
+- `TRUEFORGE_BASE_URL=http://localhost:8791`
+- `TRUEFORGE_MODEL_NAME=<exact provider/model name configured inside TrueForge>`
+- `TRUEFORGE_AGENT_NAME=<saved TrueForge incident investigator agent>`
+- `TRUEFORGE_INCIDENT_ID=INC-042`
+- `TRUEFORGE_MCP_SERVER_NAME=incident.lookup.chaos` for the recovery / chaos path
+
+Then run:
+
+```powershell
+npm run investigate:incident
+```
+
+That command writes the raw run evidence to `data/runs/<run-id>.jsonl` and the run metadata to `data/runs/<run-id>.json`.
+
+Optional sandbox mode:
+
+```powershell
+npm run investigate:incident:sandbox
+```
+
+## Running The Live AgentGuard API
+
+```powershell
+npm run api:dev
+```
+
+Endpoint summary:
+
+- `GET /healthz`
+- `GET /api/runs`
+- `GET /api/runs/:runId`
+- `GET /api/runs/:runId/events`
+
+The SSE endpoint streams `snapshot`, `event`, and `status` messages and reconnects automatically when the browser EventSource reconnects.
+
+## Running The Assurance Console
+
+```powershell
+npm run ui:dev
+```
+
+For a production build:
+
+```powershell
 npm run ui:build
 ```
 
-For a real captured run, generate an artifact from a JSONL trajectory:
+The UI renders the live proof surface. It does not decide the verdict on its own.
 
-```text
-npm run assurance:export -- data\\runs\\<run-id>.jsonl
+## Running The Dockerized Path
+
+The repository includes an optional compose path in `docker-compose.assurance.yml`.
+
+Current service names:
+
+- `agentguard-api`
+- `assurance-ui`
+- `agentguard-runner` with the `run` profile
+
+Commands:
+
+```powershell
+npm run docker:assurance:up
+npm run docker:assurance:run
+npm run docker:assurance:down
 ```
 
-The recovery/chaos verifier now persists its real assurance artifact automatically under `data/assurance/<run-id>.json`.
+This path is implemented, but full end-to-end Docker validation is still pending in this documentation pass.
 
-The UI deliberately supports importing a JSON assurance artifact so the same screen can be used with a clean-clone demo artifact without reconstructing truth in the frontend.
+The compose file publishes:
+
+- AgentGuard API on `8780`
+- Assurance Console on `5174`
+
+The optional runner uses the host-gateway mapping so the container can reach the host-published TrueForge service through `host.docker.internal:8791`.
+
+## Verification Commands
+
+| Command | What it proves |
+| --- | --- |
+| `npm test` | Runs the full automated test suite. At the time of this doc pass, it passed with 103 tests. |
+| `npm run typecheck` | Type-checks the repository TypeScript sources. |
+| `npm run ui:typecheck` | Type-checks the React Assurance Console. |
+| `npm run ui:build` | Builds the Assurance Console for production. |
+| `npm run trueforge:health` | Confirms the configured TrueForge base URL is reachable. |
+| `npm run trueforge:probe` | Streams a real TrueForge turn and records raw evidence. |
+| `npm run investigate:incident` | Runs the live incident-investigation workflow. |
+| `npm run verify:real-mcp -- data/runs/<run-id>.jsonl` | Verifies the real MCP trajectory from a captured run. |
+| `npm run verify:evidence -- data/runs/<run-id>.jsonl INC-042` | Verifies the evidence chain for the target incident. |
+| `npm run verify:policy` | Exercises the policy gate against the execution contract. |
+| `npm run verify:recovery-chaos` | Runs the real recovery / chaos verification workflow. |
+| `npm run assurance:export -- data/runs/<run-id>.jsonl` | Converts a captured run into an assurance artifact. |
+
+## Evidence And `AssuranceArtifact`
+
+Raw evidence lives in `data/runs/`. Final authoritative assurance output lives in `data/assurance/`.
+
+The `AssuranceArtifact` contains:
+
+- `version`
+- `runId`
+- `contract`
+- `incidentId?`
+- `status`
+- `verdict`
+- `policy`
+- `execution`
+- `recovery`
+- `evidence`
+- `contractVerification`
+- `summary`
+- `failureReasons`
+- `generatedAt`
+
+The artifact is the authoritative summary of the AgentGuard assurance decision for a completed run.
+
+## Golden Path Demo
+
+The evaluator should see:
+
+1. TrueForge executes the incident-investigation workflow.
+2. AgentGuard captures and normalizes the real execution evidence.
+3. Policy, recovery, evidence, and contract checks run against observed events.
+4. The Assurance Console shows a semantic timeline rather than token-level streaming noise.
+5. The selected row reveals compact proof metadata.
+6. The final `AssuranceArtifact` drives the PASS / FAIL verdict.
+
+Demo story:
+
+```text
+TrueForge → execution
+AgentGuard → verification
+Assurance Console → proof
+```
+
+Failure / recovery story:
+
+```text
+Chaos → failure → recovery → retry → verification → final verdict
+```
+
+## Security Model
+
+See [SECURITY.md](SECURITY.md) for the full security guidance.
+
+Short version:
+
+- keep the experiment isolated
+- use synthetic data only
+- do not mount personal home directories into containers
+- do not expose credentials or `.env` files to agent-facing processes
+- treat the UI as untrusted for verdict decisions
+- keep the trust boundary in AgentGuard and the `AssuranceArtifact`
+
+## Qodo AI-Assisted Development and Review
+
+Qodo AI was used throughout the development of AgentGuard, from the beginning of the implementation through the final engineering passes, as an AI-assisted code-quality and review tool.
+
+Qodo was used to help inspect implementation changes, identify potential bugs and regressions early, challenge assumptions, and improve code quality before changes were accepted.
+
+The development workflow treated Qodo feedback as an engineering review input:
+
+```text
+Implementation
+    ↓
+Qodo-assisted review
+    ↓
+fix findings
+    ↓
+automated tests
+    ↓
+runtime verification
+    ↓
+reviewed commit
+```
+
+That review loop supplemented, but did not replace, human engineering judgment, tests, or runtime verification.
+
+## Documentation / Project Status
+
+| Area | Status |
+| --- | --- |
+| Core AgentGuard pipeline | Implemented and tested |
+| Live API and Assurance Console | Implemented and type-checked |
+| Real TrueForge incident workflow | Implemented and verified locally |
+| Evidence and contract verification | Implemented and tested |
+| Dockerized Assurance path | Implemented, but full end-to-end validation is still pending |
+| Screenshot assets | Not currently checked in |
+
+## Troubleshooting
+
+- `npm run api:dev` fails to start: check that `data/` exists and that `AGENTGUARD_DATA_DIR` points to the right root.
+- The console shows no runs: confirm `npm run api:dev` is running and that `GET /api/runs` returns data.
+- The console reconnects repeatedly: check whether the live API is reachable on `8780`.
+- `npm run investigate:incident` fails before the first tool call: verify `TRUEFORGE_BASE_URL`, `TRUEFORGE_AGENT_NAME`, and `TRUEFORGE_MODEL_NAME`.
+- `npm run trueforge:health` fails: TrueForge is not reachable at the configured base URL.
+- `npm run verify:real-mcp` reports `FAIL`: inspect the raw JSONL file to confirm the correlated tool call/result pair.
+- The Docker runner cannot reach TrueForge: confirm the host-published TrueForge service and the host-gateway mapping in `docker-compose.assurance.yml`.
+- `npm run ui:build` fails: rerun `npm install --prefix ui` and verify the TypeScript toolchain.
+
+## Final Verification Checklist
+
+- [ ] `npm install`
+- [ ] `npm install --prefix ui`
+- [ ] `npm run typecheck`
+- [ ] `npm run ui:typecheck`
+- [ ] `npm test`
+- [ ] `npm run ui:build`
+- [ ] `npm run trueforge:health`
+- [ ] `npm run investigate:incident`
+- [ ] `npm run verify:real-mcp -- data/runs/<run-id>.jsonl`
+- [ ] Select the run in the Assurance Console and confirm the semantic timeline
+- [ ] Confirm the final verdict comes from the `AssuranceArtifact`

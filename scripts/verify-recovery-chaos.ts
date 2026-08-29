@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { TrueForge } from "@truefoundry/trueforge-sdk";
 
 import { loadExecutionContract } from "../src/contract/loader.js";
@@ -439,9 +440,11 @@ function printReport(
 async function persistAssuranceArtifact(
   assurance: ReturnType<typeof buildAssuranceArtifact>,
 ): Promise<void> {
-  await mkdir("data/assurance", { recursive: true });
+  const dataRoot = process.env.AGENTGUARD_DATA_DIR?.trim() || "data";
+  const assuranceDir = join(dataRoot, "assurance");
+  await mkdir(assuranceDir, { recursive: true });
   await writeFile(
-    `data/assurance/${assurance.runId}.json`,
+    join(assuranceDir, `${assurance.runId}.json`),
     `${JSON.stringify(assurance, null, 2)}\n`,
     "utf8",
   );

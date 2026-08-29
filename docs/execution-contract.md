@@ -2,13 +2,22 @@
 
 ## Purpose
 
-PR #3 introduces the first execution contract for AgentGuard.
+An `ExecutionContract` defines the execution boundaries that AgentGuard expects for a controlled agent workflow.
 
-The contract declares what an agent is allowed to do, what requires human approval, what is forbidden, how many retries are permitted, and what evidence is required before an outcome can be trusted.
+The contract describes:
 
-This phase defines and validates the contract. It does not yet compare a contract against observed execution events. That is the responsibility of the verifier phase.
+* allowed actions
+* approval-required actions
+* denied actions
+* retry limits
+* evidence requirements
+* outcome verification requirements
 
-## Contract model
+The contract is evaluated against observed execution evidence by the deterministic verifier.
+
+---
+
+## Contract Model
 
 ```text
 Execution Contract
@@ -23,11 +32,19 @@ Execution Contract
     └── required evidence
 ```
 
-## Example
+---
 
-See `contracts/incident-investigation.yaml`.
+## Example Contract
 
-The example intentionally uses synthetic incident-response actions:
+The current example is:
+
+```text
+contracts/incident-investigation.yaml
+```
+
+It intentionally uses synthetic incident-response actions.
+
+Typical boundaries include:
 
 ```text
 mcp:database.read       → allowed
@@ -44,31 +61,170 @@ host:shell              → denied
 secrets:read            → denied
 ```
 
-## Design boundary
+The exact contract file is authoritative for the current implementation.
 
-The contract is runtime-independent.
+---
 
-TrueForge event names do not appear in the contract. A later verifier will map normalized `ExecutionEvent` semantics to these declared boundaries.
+## Contract Semantics
+
+### Allowed
+
+An explicitly allowed action may proceed through the controlled execution path.
+
+```text
+action
+  ↓
+contract
+  ↓
+ALLOW
+```
+
+### Approval Required
+
+An approval-required action must have an observed approval before it can be considered authorized.
+
+```text
+action
+  ↓
+APPROVAL_REQUIRED
+  ↓
+approval observed?
+  ├── yes → permitted
+  └── no  → not permitted
+```
+
+### Denied
+
+A denied action is a contract violation if observed.
+
+```text
+denied action
+      ↓
+FAIL
+```
+
+### Retry Limits
+
+The contract defines the maximum number of retries.
+
+Recovery is not inferred merely because a later action with the same name succeeds.
+
+A recovery must belong to the relevant retry trajectory and occur after the failure.
+
+```text
+failure
+   ↓
+retry attempt
+   ↓
+verified success
+   ↓
+recovered
+```
+
+Exceeding the configured retry limit produces a verification failure.
+
+---
+
+## Evidence Requirements
+
+Contracts can require evidence before an execution can be trusted.
+
+For example:
+
+```text
+required evidence
+        +
+verification required
+        ↓
+deterministic verifier
+```
+
+The model's final narrative does not satisfy an evidence requirement by itself.
+
+Evidence must be established from observed runtime/tool results.
+
+---
+
+## Runtime Independence
+
+The contract does not contain TrueForge-specific event names.
+
+Instead:
 
 ```text
 ExecutionContract
        +
-ExecutionEvent
+normalized observations
        ↓
-Future verifier
+Deterministic Verifier
 ```
+
+TrueForge-specific interpretation belongs in the runtime adapter and observation layer.
+
+This keeps the contract independent from the execution harness.
+
+---
+
+## Verification
+
+The contract verifier evaluates observed execution against the contract and produces:
+
+```text
+PASS
+WARN
+FAIL
+```
+
+with findings describing the relevant observed condition.
+
+Current verification includes:
+
+* action classification
+* approval requirements
+* denied actions
+* retry limits
+* required evidence
+* outcome verification
+* unclassified actions
+
+---
 
 ## Validation
 
-The contract loader currently validates:
+The contract loader validates:
 
-- supported contract version
-- required contract fields
-- non-empty action names
-- duplicate actions within a policy set
-- conflicts between allow, approval-required, and deny sets
-- non-negative retry limits
-- boolean verification requirement
-- required evidence names
+* supported contract version
+* required contract fields
+* non-empty action names
+* duplicate actions within a policy set
+* conflicts between allow, approval-required, and deny sets
+* non-negative retry limits
+* boolean verification requirements
+* required evidence names
 
-The contract remains deliberately small until the verifier phase establishes which semantics need stronger structure.
+Relevant implementation:
+
+```text
+src/contract/loader.ts
+src/contract/types.ts
+```
+
+---
+
+## Verification Command
+
+The primary contract verification path is:
+
+```powershell
+npm run verify:real-mcp -- data/runs/<run-id>.jsonl
+```
+
+Related verification commands include:
+
+```powershell
+npm run verify:policy
+npm run verify:evidence -- data/runs/<run-id>.jsonl INC-042
+npm run verify:recovery-chaos
+```
+
+The contract is therefore not documentation-only. It is an executable boundary used by the AgentGuard verification path.

@@ -262,3 +262,47 @@ test("loadRunDetail rereads appended records for a live snapshot", async () => {
     process.env.AGENTGUARD_DATA_DIR = original;
   }
 });
+
+
+test("loadRunDetail keeps the live snapshot bounded and omits model deltas", async () => {
+  const root = await createTempDataRoot();
+  const original = process.env.AGENTGUARD_DATA_DIR;
+  process.env.AGENTGUARD_DATA_DIR = root;
+
+  try {
+    const runId = "run-large";
+    const records = Array.from({ length: 450 }, (_, index) => ({
+      received_at: `2026-08-29T11:00:${String(Math.floor(index / 10)).padStart(2, "0")}.${String(index % 10).padStart(3, "0")}Z`,
+      event: {
+        type: index % 2 === 0 ? "model.message.delta" : "tool.response",
+        id: `event-${index}`,
+        createdAt: `2026-08-29T11:00:${String(Math.floor(index / 10)).padStart(2, "0")}.${String(index % 10).padStart(3, "0")}Z`,
+        toolCallId: index % 2 === 1 ? `call-${index}` : undefined,
+        content: index % 2 === 0 ? "streamed token" : '{"found":true,"incident_id":"INC-042"}',
+      },
+    }));
+
+    await writeRun(
+      root,
+      runId,
+      {
+        runId,
+        startedAt: "2026-08-29T11:00:00.000Z",
+        baseUrl: "http://localhost:8791",
+        model: "ollama/qwen-3-8b",
+        prompt: "Large run",
+        eventCount: records.length,
+        eventTypes: ["model.message.delta", "tool.response"],
+      },
+      records,
+    );
+
+    const detail = await loadRunDetail(runId);
+    assert.equal(detail?.events.length, 200);
+    assert.ok(detail?.events.every((event) => event.type !== "MODEL_OUTPUT_DELTA"));
+    assert.equal(detail?.summary.eventCount, records.length);
+    assert.equal(detail?.events[0]?.raw, undefined);
+  } finally {
+    process.env.AGENTGUARD_DATA_DIR = original;
+  }
+});

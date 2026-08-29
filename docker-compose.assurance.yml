@@ -1,0 +1,56 @@
+name: agentguard-assurance
+
+services:
+  agentguard-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.agentguard
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 8780
+      AGENTGUARD_DATA_DIR: /app/data
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8780:8780"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8780/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  assurance-ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    ports:
+      - "5174:80"
+    depends_on:
+      agentguard-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Optional real-run launcher. It connects to the EXISTING TrueForge Docker
+  # service through the host-published port and writes run evidence to the same
+  # ./data volume consumed by agentguard-api.
+  agentguard-runner:
+    profiles: ["run"]
+    build:
+      context: .
+      dockerfile: Dockerfile.agentguard
+    environment:
+      NODE_ENV: production
+      AGENTGUARD_DATA_DIR: /app/data
+      TRUEFORGE_BASE_URL: http://host.docker.internal:8791
+      TRUEFORGE_MODEL_NAME: "${TRUEFORGE_MODEL_NAME:?Set TRUEFORGE_MODEL_NAME in .env}"
+      TRUEFORGE_AGENT_NAME: "${TRUEFORGE_AGENT_NAME:?Set TRUEFORGE_AGENT_NAME in .env}"
+      TRUEFORGE_INCIDENT_ID: "${TRUEFORGE_INCIDENT_ID:-INC-042}"
+      TRUEFORGE_MCP_SERVER_NAME: "${TRUEFORGE_MCP_SERVER_NAME:-incident.lookup.chaos}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/app/data
+    command: ["npm", "run", "verify:recovery-chaos"]

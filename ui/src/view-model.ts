@@ -5,6 +5,8 @@ import type {
   TimelineEntry,
 } from "./types";
 
+const TIMELINE_EVENT_LIMIT = 200;
+
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
@@ -54,6 +56,86 @@ function describeParsedContent(
       return `${key}: ${String(item)}`;
     },
   );
+}
+
+function isSemanticEvent(event: ExecutionEvent): boolean {
+  return event.type !== "MODEL_OUTPUT_DELTA";
+}
+
+function previewValue(value: unknown, maxLength = 120): string | undefined {
+  if (typeof value === "string") {
+    return value.length > maxLength
+      ? `${value.slice(0, maxLength)}…`
+      : value;
+  }
+
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  ) {
+    return String(value);
+  }
+
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+
+  try {
+    const serialized = JSON.stringify(value);
+    return serialized.length > maxLength
+      ? `${serialized.slice(0, maxLength)}…`
+      : serialized;
+  } catch {
+    return undefined;
+  }
+}
+
+function summarizeToolCalls(toolCalls: unknown): Array<Record<string, unknown>> | undefined {
+  if (!Array.isArray(toolCalls)) {
+    return undefined;
+  }
+
+  const summary = toolCalls.flatMap((call) => {
+    if (!call || typeof call !== "object") {
+      return [];
+    }
+
+    const record = call as Record<string, unknown>;
+    return [
+      {
+        ...(stringValue(record.toolCallId) ? { toolCallId: stringValue(record.toolCallId) } : {}),
+        ...(stringValue(record.toolName) ? { toolName: stringValue(record.toolName) } : {}),
+        ...(stringValue(record.functionName) ? { functionName: stringValue(record.functionName) } : {}),
+        ...(stringValue(record.mcpServer) ? { mcpServer: stringValue(record.mcpServer) } : {}),
+        ...(previewValue(record.arguments) ? { arguments: previewValue(record.arguments) } : {}),
+      },
+    ];
+  });
+
+  return summary.length > 0 ? summary : undefined;
+}
+
+function summarizeParsedContent(parsedContent: unknown): Record<string, unknown> | undefined {
+  if (!parsedContent || typeof parsedContent !== "object" || Array.isArray(parsedContent)) {
+    return undefined;
+  }
+
+  const record = parsedContent as Record<string, unknown>;
+  const summary: Record<string, unknown> = {};
+
+  if ("found" in record) {
+    summary.found = record.found === true;
+  }
+
+  for (const key of ["incident_id", "service", "severity", "status", "suspected_component"] as const) {
+    const value = stringValue(record[key]);
+    if (value) {
+      summary[key] = value;
+    }
+  }
+
+  return Object.keys(summary).length > 0 ? summary : undefined;
 }
 
 function statusForEvent(
@@ -207,7 +289,7 @@ function eventDetails(event: ExecutionEvent): string[] {
           stringValue(record.toolName) ? `tool: ${record.toolName}` : undefined,
           stringValue(record.mcpServer) ? `server: ${record.mcpServer}` : undefined,
           stringValue(record.toolCallId) ? `call: ${record.toolCallId}` : undefined,
-          stringValue(record.arguments) ? `args: ${record.arguments}` : undefined,
+          previewValue(record.arguments, 180) ? `args: ${previewValue(record.arguments, 180)}` : undefined,
         ]
           .filter((value): value is string => typeof value === "string");
 
@@ -228,20 +310,75 @@ function eventDetails(event: ExecutionEvent): string[] {
 function eventPayload(
   event: ExecutionEvent,
 ): Record<string, unknown> {
-  return {
+  const payload: Record<string, unknown> = {
     type: event.type,
     timestamp: event.timestamp,
     receivedAt: event.receivedAt,
     correlationId: event.correlationId,
     status: event.status,
-    data: event.data,
   };
+
+  if (event.type === "EXECUTION_STARTED") {
+    const input = event.data.input;
+    if (Array.isArray(input)) {
+      payload.inputCount = input.length;
+      const firstPrompt = firstText(input);
+      if (firstPrompt) {
+        payload.promptPreview = previewValue(firstPrompt, 160);
+      }
+    }
+  }
+
+  if (event.type === "MODEL_OUTPUT_STARTED") {
+    const model = stringValue(event.data.model);
+    if (model) {
+      payload.model = model;
+    }
+  }
+
+  if (event.type === "SANDBOX_CREATED") {
+    const sandboxId = stringValue(event.data.sandboxId);
+    if (sandboxId) {
+      payload.sandboxId = sandboxId;
+    }
+  }
+
+  if (event.type === "TOOL_CALL") {
+    const toolCalls = summarizeToolCalls(event.data.toolCalls);
+    if (toolCalls) {
+      payload.toolCalls = toolCalls;
+    }
+  }
+
+  if (event.type === "TOOL_RESULT") {
+    const parsedContent = summarizeParsedContent(event.data.parsedContent);
+    if (parsedContent) {
+      payload.parsedContent = parsedContent;
+    }
+
+    const toolCallId = stringValue(event.data.toolCallId);
+    if (toolCallId) {
+      payload.toolCallId = toolCallId;
+    }
+  }
+
+  if (event.type === "EXECUTION_COMPLETED") {
+    if (event.status) {
+      payload.finalStatus = event.status;
+    }
+  }
+
+  return payload;
 }
 
 export function buildTimelineEntries(
   detail: RunDetail,
+  limit = TIMELINE_EVENT_LIMIT,
 ): TimelineEntry[] {
-  const entries: TimelineEntry[] = detail.events.map((event) => ({
+  const entries: TimelineEntry[] = detail.events
+    .filter(isSemanticEvent)
+    .slice(-limit)
+    .map((event) => ({
     id: event.id,
     kind: "event",
     stage: event.type,
@@ -349,6 +486,13 @@ export function buildTimelineEntries(
   }
 
   return entries;
+}
+
+export function semanticTimelineEvents(
+  events: readonly ExecutionEvent[],
+  limit = TIMELINE_EVENT_LIMIT,
+): ExecutionEvent[] {
+  return events.filter(isSemanticEvent).slice(-limit);
 }
 
 export function buildArtifactOnlyDetail(

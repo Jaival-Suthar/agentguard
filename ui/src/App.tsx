@@ -17,6 +17,7 @@ import { fallbackFailArtifact, fallbackPassArtifact } from "./data/demoArtifacts
 import {
   buildArtifactOnlyDetail,
   buildTimelineEntries,
+  semanticTimelineEvents,
 } from "./view-model";
 import type {
   AssuranceArtifact,
@@ -77,11 +78,17 @@ function emptyDetail(): RunDetail | null {
   return null;
 }
 
+function sanitizeDetail(detail: RunDetail): RunDetail {
+  return {
+    ...detail,
+    events: semanticTimelineEvents(detail.events),
+  };
+}
+
 export default function App() {
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [selectedValue, setSelectedValue] = useState<string>("");
   const [detail, setDetail] = useState<RunDetail | null>(emptyDetail);
-  const [entries, setEntries] = useState<TimelineEntry[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<TimelineEntry | null>(null);
   const [streamState, setStreamState] = useState<
     "idle" | "connecting" | "connected" | "reconnecting" | "disconnected"
@@ -142,9 +149,10 @@ export default function App() {
     setSelectedValue(`run:${runs[0]?.runId}`);
   }, [runs, selectedValue]);
 
-  useEffect(() => {
-    setEntries(detail ? buildTimelineEntries(detail) : []);
-  }, [detail]);
+  const entries = useMemo(
+    () => (detail ? buildTimelineEntries(detail) : []),
+    [detail],
+  );
 
   useEffect(() => {
     if (entries.length === 0) {
@@ -226,28 +234,44 @@ export default function App() {
           return;
         }
 
-        setDetail(snapshot);
+        setDetail(sanitizeDetail(snapshot));
         setStreamState("connected");
 
         subscriptionRef.current = watchRun(
           runId,
           (nextSnapshot) => {
-            if (cancelled) {
+            if (cancelled) return;
+            setDetail(sanitizeDetail(nextSnapshot));
+            setStreamState("connected");
+          },
+          (nextEvent) => {
+            if (cancelled) return;
+            if (nextEvent.type === "MODEL_OUTPUT_DELTA") {
+              setStreamState("connected");
               return;
             }
-
-            setDetail(nextSnapshot);
+            setDetail((current) => {
+              if (!current || current.summary.runId !== runId) return current;
+              const events = semanticTimelineEvents(
+                [...current.events, nextEvent],
+              );
+              return { ...current, events };
+            });
+            setStreamState("connected");
+          },
+          (nextSummary) => {
+            if (cancelled) return;
+            setDetail((current) => {
+              if (!current || current.summary.runId !== runId) return current;
+              return { ...current, summary: nextSummary };
+            });
             setStreamState("connected");
           },
           () => {
-            if (!cancelled) {
-              setStreamState("reconnecting");
-            }
+            if (!cancelled) setStreamState("reconnecting");
           },
           (watchError) => {
-            if (!cancelled) {
-              setError(watchError.message);
-            }
+            if (!cancelled) setError(watchError.message);
           },
         );
       } catch (loadError) {
@@ -397,6 +421,7 @@ export default function App() {
         <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(330px,.7fr)]">
           <AssuranceTimeline
             entries={entries}
+            selectedId={selectedEntry?.id ?? null}
             onSelect={setSelectedEntry}
           />
           <div className="space-y-5">

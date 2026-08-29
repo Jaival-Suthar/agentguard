@@ -1,7 +1,9 @@
 export {
   getRunStat,
   listRunSummaries,
+  loadRunSummary,
   loadRunDetail,
+  runJsonlPath,
   loadRunSnapshot,
   runExists,
 } from "./store.js";

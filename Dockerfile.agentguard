@@ -1,0 +1,21 @@
+# AgentGuard live API image.
+FROM node:22-slim
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=optional
+
+COPY tsconfig.json ./
+COPY src ./src
+COPY scripts ./scripts
+COPY contracts ./contracts
+
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=8780 \
+    AGENTGUARD_DATA_DIR=/app/data
+
+EXPOSE 8780
+
+CMD ["npm", "run", "api:dev"]

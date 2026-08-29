@@ -22,7 +22,10 @@
     "assurance:index": "tsx scripts/index-assurance-artifacts.ts",
     "ui:dev": "npm --prefix ui run dev",
     "ui:build": "npm --prefix ui run build",
-    "ui:typecheck": "npm --prefix ui run typecheck"
+    "ui:typecheck": "npm --prefix ui run typecheck",
+    "docker:assurance:up": "docker compose -f docker-compose.assurance.yml up --build -d",
+    "docker:assurance:down": "docker compose -f docker-compose.assurance.yml down",
+    "docker:assurance:run": "docker compose -f docker-compose.assurance.yml --profile run run --rm agentguard-runner"
   },
   "engines": {
     "node": ">=22.14.0"

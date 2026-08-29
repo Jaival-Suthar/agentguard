@@ -22,6 +22,18 @@ function connectionSeverity(
   return "info";
 }
 
+function connectionMessage(state: LiveConnectionState): string {
+  if (state === "RUNNING") {
+    return "AgentGuard is still processing the execution.";
+  }
+
+  if (state === "VERIFYING") {
+    return "Execution completed. AgentGuard is verifying the assurance result.";
+  }
+
+  return "Awaiting final AssuranceArtifact from AgentGuard";
+}
+
 export function RunHeader({
   run,
   artifact,
@@ -34,8 +46,7 @@ export function RunHeader({
   const title =
     artifact?.incidentId ??
     run?.incidentId ??
-    run?.runId ??
-    "Select a run";
+    (run ? "Assurance Run" : "Select a run");
 
   const contract =
     artifact?.contract ??
@@ -56,9 +67,9 @@ export function RunHeader({
               <span className="eyebrow">AGENTGUARD / ASSURANCE RUN</span>
               {artifact ? <StatusTag value={artifact.status} /> : <Tag value={connectionState.replaceAll("_", " ")} severity={connectionSeverity(connectionState)} rounded />}
             </div>
-            <h1 className="mt-2 truncate text-2xl font-semibold tracking-tight text-slate-50">{title}</h1>
+            <h1 className="mt-2 truncate text-2xl font-semibold tracking-tight text-slate-900">{title}</h1>
             <p className="mt-1 text-sm text-slate-400">{contract}</p>
-            <div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-500">
+            <div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-900">
               <span className="inline-flex items-center gap-1.5"><FiFileText /> Run {run?.runId ?? artifact?.runId ?? "n/a"}</span>
               <span className="inline-flex items-center gap-1.5"><FiWifi /> {connectionState.replaceAll("_", " ")}</span>
               {timestamp ? <span className="inline-flex items-center gap-1.5"><FiClock /> {formatAssuranceTimestamp(timestamp)}</span> : null}
@@ -76,7 +87,7 @@ export function RunHeader({
               : artifact.status === "EXHAUSTED"
                 ? "Recovery exhausted"
                 : artifact.summary
-            : "Awaiting final AssuranceArtifact from AgentGuard"}
+            : connectionMessage(connectionState)}
         </div>
       </div>
     </div>

@@ -171,6 +171,11 @@ button {
   box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.08);
 }
 
+.timeline-marker.is-selected {
+  border-color: rgba(37, 99, 235, 0.45);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
 .timeline-marker.pass {
   color: #047857;
   border-color: rgba(16, 185, 129, 0.3);
@@ -197,6 +202,20 @@ button {
 
 .timeline-content {
   padding: 2px 0 18px 4px;
+  border-radius: 14px;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.timeline-content:hover {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.timeline-content.is-selected {
+  background: rgba(239, 246, 255, 0.82);
+  box-shadow: inset 0 0 0 1px rgba(147, 197, 253, 0.8);
 }
 
 .timeline-icon {
