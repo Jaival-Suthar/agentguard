@@ -9,13 +9,13 @@ import {
   loadRunDetail,
 } from "../../src/live/index.js";
 
-function artifact(runId: string, verdict: "PASS" | "FAIL") {
+function artifact(runId: string, verdict: "PASS" | "WARN" | "FAIL") {
   return {
     version: 1,
     runId,
     contract: "incident-investigation",
     incidentId: "INC-042",
-    status: verdict === "PASS" ? "COMPLETED" : "FAILED",
+    status: verdict === "FAIL" ? "FAILED" : "COMPLETED",
     verdict,
     policy: {
       status: "PASS",
@@ -38,7 +38,9 @@ function artifact(runId: string, verdict: "PASS" | "FAIL") {
       summary:
         verdict === "PASS"
           ? "Required evidence was independently verified."
-          : "Evidence verification returned FAIL.",
+          : verdict === "WARN"
+            ? "Evidence verification returned WARN."
+            : "Evidence verification returned FAIL.",
       details: [],
     },
     contractVerification: {
@@ -49,8 +51,10 @@ function artifact(runId: string, verdict: "PASS" | "FAIL") {
     summary:
       verdict === "PASS"
         ? "Execution completed and all assurance checks passed."
-        : "Execution completed with failure.",
-    failureReasons: verdict === "PASS" ? [] : ["Evidence verification returned FAIL."],
+        : verdict === "WARN"
+          ? "Execution completed with warnings."
+          : "Execution completed with failure.",
+    failureReasons: verdict === "FAIL" ? ["Evidence verification returned FAIL."] : [],
     generatedAt: "2026-08-29T10:00:02.000Z",
   };
 }
@@ -171,6 +175,51 @@ test("listRunSummaries returns the most recent runs and marks completed artifact
     assert.equal(summaries[0]?.connectionState, "VERIFIED");
     assert.equal(summaries[1]?.runId, "run-old");
     assert.equal(summaries[1]?.connectionState, "RUNNING");
+  } finally {
+    process.env.AGENTGUARD_DATA_DIR = original;
+  }
+});
+
+test("listRunSummaries preserves WARN artifacts as WARN", async () => {
+  const root = await createTempDataRoot();
+  const original = process.env.AGENTGUARD_DATA_DIR;
+  process.env.AGENTGUARD_DATA_DIR = root;
+
+  try {
+    await writeRun(
+      root,
+      "run-warn",
+      {
+        runId: "run-warn",
+        startedAt: "2026-08-29T10:30:00.000Z",
+        baseUrl: "http://localhost:8791",
+        model: "ollama/qwen-3-8b",
+        prompt: "Warn run",
+        eventCount: 1,
+        eventTypes: ["EXECUTION_STARTED"],
+        completedAt: "2026-08-29T10:30:02.000Z",
+        finalStatus: "done",
+      },
+      [
+        {
+          received_at: "2026-08-29T10:30:00.000Z",
+          event: {
+            type: "turn.created",
+            id: "turn-warn",
+            turnId: "turn-warn",
+            input: [],
+            state: { status: "running" },
+            createdAt: "2026-08-29T10:30:00.000Z",
+          },
+        },
+      ],
+      artifact("run-warn", "WARN"),
+    );
+
+    const summaries = await listRunSummaries();
+    assert.equal(summaries[0]?.runId, "run-warn");
+    assert.equal(summaries[0]?.verdict, "WARN");
+    assert.equal(summaries[0]?.connectionState, "WARN");
   } finally {
     process.env.AGENTGUARD_DATA_DIR = original;
   }

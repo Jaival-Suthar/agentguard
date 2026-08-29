@@ -15,7 +15,7 @@ function connectionSeverity(
     return "danger";
   }
 
-  if (state === "RECONNECTING" || state === "RECOVERING" || state === "VERIFYING") {
+  if (state === "WARN" || state === "RECONNECTING" || state === "RECOVERING" || state === "VERIFYING") {
     return "warning";
   }
 

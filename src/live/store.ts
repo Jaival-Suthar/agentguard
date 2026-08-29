@@ -78,7 +78,9 @@ function connectionStateFor(summary: {
   eventCount: number;
 }): LiveConnectionState {
   if (summary.artifactAvailable && summary.verdict) {
-    return summary.verdict === "PASS" ? "VERIFIED" : "FAILED";
+    if (summary.verdict === "PASS") return "VERIFIED";
+    if (summary.verdict === "WARN") return "WARN";
+    return "FAILED";
   }
   if (summary.status === "RECOVERED") return "RECOVERING";
   if (summary.status === "EXHAUSTED" || summary.finalStatus === "failed") return "FAILED";

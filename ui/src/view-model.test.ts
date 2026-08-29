@@ -106,3 +106,21 @@ test("buildTimelineEntries keeps selected proof metadata compact and factual", (
   });
   assert.equal(entry?.payload.data, undefined);
 });
+
+test("buildTimelineEntries maps execution completion status without assuming PASS", () => {
+  const entries = buildTimelineEntries(
+    makeDetail([
+      makeEvent("e0", "EXECUTION_COMPLETED", { output: { type: "model.message" } }),
+      makeEvent("e1", "EXECUTION_COMPLETED", { output: { type: "model.message" } }),
+      makeEvent("e2", "EXECUTION_COMPLETED", { output: { type: "model.message" } }),
+    ].map((event, index) => ({
+      ...event,
+      status: index === 0 ? "done" : index === 1 ? "failed" : "mystery",
+    }))),
+  );
+
+  assert.deepEqual(
+    entries.map((entry) => entry.state),
+    ["PASS", "FAIL", "LIVE"],
+  );
+});

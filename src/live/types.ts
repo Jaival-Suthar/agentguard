@@ -6,6 +6,7 @@ export type LiveConnectionState =
   | "RUNNING"
   | "RECOVERING"
   | "VERIFYING"
+  | "WARN"
   | "RECONNECTING"
   | "VERIFIED"
   | "FAILED"

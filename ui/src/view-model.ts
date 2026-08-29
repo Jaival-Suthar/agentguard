@@ -155,7 +155,15 @@ function statusForEvent(
   }
 
   if (event.type === "EXECUTION_COMPLETED") {
-    return "PASS";
+    if (event.status === "done" || event.status === "completed" || event.status === "success") {
+      return "PASS";
+    }
+
+    if (event.status === "failed" || event.status === "error" || event.status === "cancelled") {
+      return "FAIL";
+    }
+
+    return "LIVE";
   }
 
   return "LIVE";
@@ -261,9 +269,15 @@ function eventSummary(
   }
 
   if (event.type === "EXECUTION_COMPLETED") {
-    return event.status === "done"
-      ? "Execution completed."
-      : `Execution completed with status ${event.status ?? "unknown"}.`;
+    if (event.status === "done" || event.status === "completed" || event.status === "success") {
+      return "Execution completed.";
+    }
+
+    if (event.status === "failed" || event.status === "error" || event.status === "cancelled") {
+      return `Execution completed with status ${event.status}.`;
+    }
+
+    return `Execution completed with status ${event.status ?? "unknown"}.`;
   }
 
   return "Observed runtime event.";
@@ -512,7 +526,11 @@ export function buildArtifactOnlyDetail(
       ...(artifact.verdict ? { verdict: artifact.verdict } : {}),
       artifactAvailable: true,
       connectionState:
-        artifact.verdict === "PASS" ? "VERIFIED" : "FAILED",
+        artifact.verdict === "PASS"
+          ? "VERIFIED"
+          : artifact.verdict === "WARN"
+            ? "WARN"
+            : "FAILED",
     },
     artifact,
     events: [],
@@ -536,6 +554,10 @@ export function connectionLabel(
   if (detail.artifact) {
     if (detail.artifact.verdict === "PASS") {
       return { label: "VERIFIED", tone: "success" };
+    }
+
+    if (detail.artifact.verdict === "WARN") {
+      return { label: "WARN", tone: "warning" };
     }
 
     return { label: "FAILED", tone: "danger" };

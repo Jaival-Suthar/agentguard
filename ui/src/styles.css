@@ -256,6 +256,11 @@ button {
   background: linear-gradient(145deg, rgba(255, 247, 247, 0.98), rgba(255, 255, 255, 0.92));
 }
 
+.ag-verdict-panel.warn {
+  border-color: rgba(245, 158, 11, 0.24);
+  background: linear-gradient(145deg, rgba(255, 251, 235, 0.98), rgba(255, 255, 255, 0.92));
+}
+
 .verdict-icon {
   width: 48px;
   height: 48px;
@@ -269,6 +274,11 @@ button {
 .fail .verdict-icon {
   color: #b91c1c;
   background: rgba(239, 68, 68, 0.1);
+}
+
+.warn .verdict-icon {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.1);
 }
 
 .mini-proof {
