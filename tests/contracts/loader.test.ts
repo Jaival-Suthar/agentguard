@@ -182,3 +182,26 @@ ordering:
     /Ordering action "mcp:b" must be declared/,
   );
 });
+
+
+test("rejects a maxRetries value above Number.MAX_SAFE_INTEGER", () => {
+  assert.throws(
+    () =>
+      parseExecutionContract(`
+version: 1
+name: invalid
+actions:
+  allow:
+    - mcp:database.read
+  approvalRequired: []
+  deny: []
+limits:
+  maxRetries: 9007199254740992
+requirements:
+  verificationRequired: true
+  requiredEvidence:
+    - root_cause
+`),
+    /maxRetries must be a non-negative safe integer/,
+  );
+});

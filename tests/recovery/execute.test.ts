@@ -192,6 +192,65 @@ test("rejects an invalid runtime retry limit", async () => {
 
   await assert.rejects(
     executeWithRecovery(contract, () => "never"),
-    /maxRetries must be a non-negative integer/,
+    /maxRetries must be a non-negative safe integer/,
+  );
+});
+
+
+test("keeps the validated retry bound when the executor mutates the contract", async () => {
+  const contract = makeContract(1);
+  let executions = 0;
+
+  await assert.rejects(
+    executeWithRecovery(contract, () => {
+      executions += 1;
+      contract.limits.maxRetries = 100;
+      throw new Error(`failure-${executions}`);
+    }),
+    (error: unknown) =>
+      error instanceof RecoveryExhaustedError &&
+      error.attempts === 2 &&
+      error.retries === 1 &&
+      error.lastError instanceof Error &&
+      error.lastError.message === "failure-2",
+  );
+
+  assert.equal(executions, 2);
+});
+
+test("keeps the validated retry bound when onRetry mutates the contract", async () => {
+  const contract = makeContract(1);
+  let executions = 0;
+
+  await assert.rejects(
+    executeWithRecovery(
+      contract,
+      () => {
+        executions += 1;
+        throw new Error(`failure-${executions}`);
+      },
+      {
+        onRetry: () => {
+          contract.limits.maxRetries = 100;
+        },
+      },
+    ),
+    (error: unknown) =>
+      error instanceof RecoveryExhaustedError &&
+      error.attempts === 2 &&
+      error.retries === 1 &&
+      error.lastError instanceof Error &&
+      error.lastError.message === "failure-2",
+  );
+
+  assert.equal(executions, 2);
+});
+
+test("rejects retry limits above Number.MAX_SAFE_INTEGER", async () => {
+  const contract = makeContract(Number.MAX_SAFE_INTEGER + 1);
+
+  await assert.rejects(
+    executeWithRecovery(contract, () => "never"),
+    /maxRetries must be a non-negative safe integer/,
   );
 });

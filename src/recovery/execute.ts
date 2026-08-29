@@ -14,6 +14,7 @@ export async function executeWithRecovery<T>(
   options: RecoveryOptions = {},
 ): Promise<RecoveryResult<T>> {
   assertValidRetryLimit(contract);
+  const maxRetries = contract.limits.maxRetries;
 
   const history: RecoveryAttempt<T>[] = [];
   let retry = 0;
@@ -46,7 +47,7 @@ export async function executeWithRecovery<T>(
         error,
       });
 
-      if (retry >= contract.limits.maxRetries) {
+      if (retry >= maxRetries) {
         throw new RecoveryExhaustedError(
           attempt,
           retry,

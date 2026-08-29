@@ -60,11 +60,11 @@ export function assertValidRetryLimit(
   const { maxRetries } = contract.limits;
 
   if (
-    !Number.isInteger(maxRetries) ||
+    !Number.isSafeInteger(maxRetries) ||
     maxRetries < 0
   ) {
     throw new RangeError(
-      `Execution contract maxRetries must be a non-negative integer; received ${String(maxRetries)}.`,
+      `Execution contract maxRetries must be a non-negative safe integer; received ${String(maxRetries)}.`,
     );
   }
 }
