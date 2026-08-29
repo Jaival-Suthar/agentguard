@@ -9,3 +9,11 @@ coverage
 .pnpm-store
 .vscode
 .idea
+
+data
+
+.runtime
+
+ui
+
+tests

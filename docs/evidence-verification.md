@@ -1,49 +1,60 @@
 # Evidence Verification
 
-Evidence verification is the AgentGuard trust boundary between a captured TrueForge trajectory and a claim that the execution produced trustworthy evidence.
+Evidence verification is the AgentGuard trust boundary between raw TrueForge execution and a claim that the execution produced trustworthy incident evidence.
 
-The verifier does **not** use the model's final narrative as proof.
+The verifier does not use the model's final narrative as proof.
 
-## Verification chain
+## Verification Chain
 
 ```text
 TrueForge JSONL
-      ↓
+    ↓
 normalized observations
-      ↓
-correlated action → outcome pairs
-      ↓
+    ↓
+correlated toolCallId pairs
+    ↓
 trusted MCP incident evidence
-      ↓
-deterministic sandbox evidence
-      ↓
+    ↓
+optional sandbox / recovery evidence
+    ↓
 cross-source consistency checks
-      ↓
+    ↓
 PASS / WARN / FAIL
 ```
 
-## What is independently checked
+## What The Workflow Checks
 
-1. Every observed action has an event identity and a correlated tool outcome.
-2. The outcome is parseable runtime evidence; an unrelated outcome cannot satisfy an action.
-3. The incident lookup must be the exact `incident.lookup:lookup_incident` action.
-4. The lookup result must be `found: true` and contain the required incident fields.
+The implementation in `src/verifier/evidence.ts` and `scripts/verify-evidence.ts` checks that:
+
+1. Observed tool calls and tool results are correlated by `toolCallId`.
+2. The incident lookup evidence comes from the exact `incident.lookup:lookup_incident` action.
+3. The lookup result must report `found: true` before it is treated as retrieved evidence.
+4. A `found: false` result must not fabricate incident facts.
 5. The returned incident ID must match the requested incident ID.
-6. When `root_cause` is required, a successful `sandbox:execute` result must contain an analysis object.
-7. The sandbox incident identity must match the trusted MCP incident evidence.
-8. `root_cause_candidate` must match `suspected_component` from the trusted MCP result.
-9. Required `root_cause` and `verification` evidence must be established from runtime/tool results, never from the model narrative.
+6. If sandbox recovery evidence is required, the sandbox result must be independently successful.
+7. Required evidence must be established from runtime/tool results, never from the model narrative.
 
 ## CLI
 
-```text
+```powershell
 npm run verify:evidence -- data/runs/<run-id>.jsonl INC-042
 ```
 
-The command exits with code `1` for `FAIL` and `0` for `PASS` or `WARN`.
+The command exits with:
 
-## Deliberate fail-closed behavior
+- `0` for `PASS` or `WARN`
+- `1` for `FAIL`
 
-If an action has no correlated outcome, if the trusted MCP result is incomplete, if the sandbox result is unsuccessful, or if the MCP and sandbox evidence disagree, the report is `FAIL`.
+## Current Behavior
 
-This is intentionally stricter than checking whether the agent *said* that it found a root cause.
+The current repository treats evidence as complete only when the correlated runtime evidence establishes it.
+
+That means:
+
+- the raw JSONL remains the source material
+- the model's prose is not trusted as proof
+- a target incident is only marked retrieved when the correlated result explicitly says `found: true`
+- unrelated tool results are ignored
+
+This is intentionally fail-closed.
+

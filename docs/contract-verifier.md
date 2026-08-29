@@ -2,27 +2,27 @@
 
 ## Purpose
 
-The verifier compares observed execution evidence against an `ExecutionContract` and produces a deterministic PASS, WARN, or FAIL result.
+The contract verifier compares observed execution evidence against an `ExecutionContract` and produces a deterministic PASS, WARN, or FAIL result.
 
 The verifier does not ask an LLM to decide whether an execution is safe.
 
-## Verification flow
+## Verification Flow
 
 ```text
 Execution Contract
-        +
+    +
 Observed Execution Evidence
-        ↓
+    ↓
 Deterministic Verifier
-        ↓
+    ↓
 PASS / WARN / FAIL
-        ↓
+    ↓
 Findings with event references
 ```
 
-## Current observation types
+## Current Observation Types
 
-The verifier evaluates observations for:
+The current repository verifies normalized observations for:
 
 - actions
 - approvals
@@ -30,9 +30,9 @@ The verifier evaluates observations for:
 - evidence completeness
 - outcome verification
 
-The observation layer is deliberately runtime-independent. Richer TrueForge event mappings will be introduced as the incident-investigation workflow adds real tool, sandbox, approval, subagent, failure, and recovery events.
+The observation layer is runtime-independent. The concrete runtime mapping lives in `src/verifier/trueforge-observations.ts`.
 
-## Contract semantics
+## Contract Semantics
 
 - `actions.allow` produces a PASS for an observed action.
 - `actions.approvalRequired` produces a PASS only when approval is observed.
@@ -42,8 +42,25 @@ The observation layer is deliberately runtime-independent. Richer TrueForge even
 - `requirements.verificationRequired` produces a FAIL when the outcome is not verified.
 - Actions not explicitly classified by the contract produce WARN rather than being silently accepted.
 
+## CLI
+
+The main verification command is:
+
+```powershell
+npm run verify:real-mcp -- data/runs/<run-id>.jsonl
+```
+
+That command loads `contracts/incident-investigation.yaml`, normalizes the TrueForge evidence, and prints the deterministic verification result.
+
+Related helpers:
+
+- `npm run verify:policy`
+- `npm run verify:evidence -- data/runs/<run-id>.jsonl INC-042`
+- `npm run verify:recovery-chaos`
+
 ## Scope
 
-This phase establishes the deterministic verification engine only.
+This verifier is deliberately strict about the evidence it accepts.
 
-It does not yet implement the complete TrueForge action/event extraction layer, chaos injection, recovery analysis, or scoring/report generation.
+It is designed to verify the current AgentGuard execution contract against the observed runtime, not to infer missing proof from prose or to replace the runtime itself.
+

@@ -1,6 +1,10 @@
 import { mkdir, writeFile, appendFile } from "node:fs/promises";
 import { join } from "node:path";
 
+function dataRoot(): string {
+  return process.env.AGENTGUARD_DATA_DIR?.trim() || "data";
+}
+
 export interface RunMetadata {
   runId: string;
   startedAt: string;
@@ -21,12 +25,12 @@ export class RunStore {
 
   constructor(runId: string) {
     this.runId = runId;
-    this.jsonlPath = join("data", "runs", `${runId}.jsonl`);
-    this.metadataPath = join("data", "runs", `${runId}.json`);
+    this.jsonlPath = join(dataRoot(), "runs", `${runId}.jsonl`);
+    this.metadataPath = join(dataRoot(), "runs", `${runId}.json`);
   }
 
   async init(): Promise<void> {
-    await mkdir(join("data", "runs"), { recursive: true });
+    await mkdir(join(dataRoot(), "runs"), { recursive: true });
   }
 
   async append(event: unknown): Promise<void> {
