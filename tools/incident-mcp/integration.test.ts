@@ -142,3 +142,64 @@ test("real MCP path requires and receives approval for rollback", async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+test("real MCP path denies rollback without executing the tool", async () => {
+  const approvalRequests: string[] = [];
+  const loggedLines: string[] = [];
+  const originalLog = console.log;
+
+  console.log = (...args: unknown[]) => {
+    loggedLines.push(args.map((value) => String(value)).join(" "));
+  };
+
+  const app = createApp(async (request) => {
+    approvalRequests.push(request.action);
+
+    return {
+      requestId: request.id,
+      approved: false,
+      decidedAt: new Date().toISOString(),
+      reason: "Integration test denial",
+    };
+  });
+
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+
+  const address = server.address();
+
+  if (!address || typeof address === "string") {
+    throw new Error("Unable to determine test server address");
+  }
+
+  const url = new URL(`http://127.0.0.1:${address.port}/mcp`);
+  const { client, transport } = await connectClient(url);
+
+  try {
+    const result = await client.callTool({
+      name: "rollback_incident",
+      arguments: {
+        incident_id: "INC-042",
+      },
+    });
+
+    const payload = JSON.parse(textResult(result));
+
+    assert.equal(result.isError, true);
+    assert.equal(payload.error, "Approval denied by AgentGuard policy");
+    assert.equal(payload.decision, "BLOCK");
+    assert.equal(payload.action, "operation:rollback");
+    assert.deepEqual(approvalRequests, ["operation:rollback"]);
+    assert.equal(
+      loggedLines.some((line) =>
+        line.includes("[MCP] rollback_incident EXECUTED incident_id=INC-042"),
+      ),
+      false,
+    );
+  } finally {
+    console.log = originalLog;
+    await transport.terminateSession().catch(() => {});
+    await client.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

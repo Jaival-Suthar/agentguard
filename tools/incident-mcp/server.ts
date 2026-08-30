@@ -17,7 +17,7 @@ import type {
   PolicyGateOptions,
 } from "../../src/policy/index.js";
 
-const HOST = process.env.HOST ?? "127.0.0.1";
+const HOST = process.env.HOST ?? "0.0.0.0";
 const PORT = Number(process.env.PORT ?? "8782");
 
 const CONTRACT_PATH = fileURLToPath(
@@ -170,7 +170,7 @@ export async function createIncidentServer(
     {
       title: "Lookup Incident",
       description:
-        "Read-only lookup of synthetic incident information for AgentGuard testing.",
+        "Read-only lookup of synthetic incident metadata and diagnostic evidence for AgentGuard testing.",
       inputSchema: z.object({
         incident_id: z.string().describe("Synthetic incident ID"),
       }),
@@ -186,13 +186,50 @@ export async function createIncidentServer(
                 `[MCP] lookup_incident called with incident_id=${incident_id}`,
               );
 
-              const incidents: Record<string, Record<string, string>> = {
+              const incidents: Record<
+                string,
+                Record<string, unknown>
+              > = {
                 "INC-042": {
                   incident_id: "INC-042",
                   service: "analytics",
                   severity: "high",
                   status: "investigating",
                   suspected_component: "nightly-worker",
+
+                  /*
+                   * Deterministic synthetic diagnostic evidence.
+                   *
+                   * This is intentionally returned by the read-only MCP
+                   * lookup rather than invented by the agent. The sandbox
+                   * independently validates these facts before deriving
+                   * the root-cause candidate.
+                   */
+                  evidence: {
+                    deployment: {
+                      component: "nightly-worker",
+                      version: "4c21",
+                      previous_version: "4c20",
+                      deployed_at: "2026-08-30T10:42:00Z",
+                    },
+
+                    configuration: {
+                      worker_concurrency: 32,
+                      database_pool_size: 20,
+                    },
+
+                    metrics: {
+                      error_rate_percent: 18.7,
+                      database_connection_exhaustion: true,
+                      queue_depth: 18420,
+                    },
+
+                    logs: [
+                      "2026-08-30T10:43:11Z ERROR nightly-worker database connection pool exhausted deployment=4c21",
+                      "2026-08-30T10:43:18Z ERROR nightly-worker unable to acquire database connection deployment=4c21",
+                      "2026-08-30T10:44:02Z WARN nightly-worker queue depth exceeded recovery threshold deployment=4c21",
+                    ],
+                  },
                 },
               };
 

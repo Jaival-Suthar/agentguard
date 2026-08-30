@@ -64,7 +64,6 @@ function goldenPath(): VerificationObservation[] {
             exitCode: 0,
             result: JSON.stringify({
               incident: {
-                found: true,
                 incident_id: "INC-042",
                 service: "analytics",
                 severity: "high",
@@ -72,6 +71,8 @@ function goldenPath(): VerificationObservation[] {
                 suspected_component: "nightly-worker",
               },
               root_cause_candidate: "nightly-worker",
+              root_cause_explanation:
+                "Deployment 4c21 increased nightly-worker concurrency to 32 while the analytics database pool remained at 20 connections, causing database connection exhaustion and the observed worker failures.",
             }),
           },
         },
@@ -99,7 +100,6 @@ function sandboxOutcome(
             exitCode === 0
               ? JSON.stringify({
                   incident: {
-                    found: true,
                     incident_id: "INC-042",
                     service: "analytics",
                     severity: "high",
@@ -107,6 +107,8 @@ function sandboxOutcome(
                     suspected_component: "nightly-worker",
                   },
                   root_cause_candidate: "nightly-worker",
+                  root_cause_explanation:
+                    "Deployment 4c21 increased nightly-worker concurrency to 32 while the analytics database pool remained at 20 connections, causing database connection exhaustion and the observed worker failures.",
                 })
               : "python3: analysis failed",
         },
@@ -126,6 +128,46 @@ test("passes the real MCP + sandbox evidence chain", () => {
   assert.equal(report.evidence.some((item) => item.type === "sandbox_analysis"), true);
 });
 
+test("accepts the nested sandbox incident shape and preserves the causal explanation", () => {
+  const observations = goldenPath();
+  const report = verifyExecutionEvidence(contract, observations, {
+    targetIncidentId: "INC-042",
+  });
+
+  assert.equal(report.verdict, "PASS");
+
+  const sandboxOutcome = observations[3];
+  assert.equal(sandboxOutcome?.kind, "outcome");
+
+  if (sandboxOutcome?.kind !== "outcome") {
+    return;
+  }
+
+  const parsedContent = sandboxOutcome.data?.parsedContent as
+    | Record<string, unknown>
+    | undefined;
+  const response = parsedContent?.response as
+    | Record<string, unknown>
+    | undefined;
+  const resultText = response?.result;
+
+  assert.equal(typeof resultText, "string");
+
+  const result = JSON.parse(resultText as string) as Record<string, unknown>;
+  const incident = result.incident as Record<string, unknown> | undefined;
+
+  assert.equal(incident?.incident_id, "INC-042");
+  assert.equal(incident?.service, "analytics");
+  assert.equal(incident?.severity, "high");
+  assert.equal(incident?.status, "investigating");
+  assert.equal(incident?.suspected_component, "nightly-worker");
+  assert.equal(result.root_cause_candidate, "nightly-worker");
+  assert.equal(
+    result.root_cause_explanation,
+    "Deployment 4c21 increased nightly-worker concurrency to 32 while the analytics database pool remained at 20 connections, causing database connection exhaustion and the observed worker failures.",
+  );
+});
+
 test("fails when the sandbox candidate is altered", () => {
   const observations = goldenPath();
   const sandboxOutcome = observations[3];
@@ -140,7 +182,6 @@ test("fails when the sandbox candidate is altered", () => {
           exitCode: 0,
           result: JSON.stringify({
             incident: {
-              found: true,
               incident_id: "INC-042",
               service: "analytics",
               severity: "high",
@@ -148,6 +189,8 @@ test("fails when the sandbox candidate is altered", () => {
               suspected_component: "nightly-worker",
             },
             root_cause_candidate: "database",
+            root_cause_explanation:
+              "Deployment 4c21 increased nightly-worker concurrency to 32 while the analytics database pool remained at 20 connections, causing database connection exhaustion and the observed worker failures.",
           }),
         },
       },
@@ -205,7 +248,6 @@ test("fails when MCP and sandbox incident identities disagree", () => {
           ...response,
           result: JSON.stringify({
             incident: {
-              found: true,
               incident_id: "INC-999",
               service: "analytics",
               severity: "high",
@@ -213,6 +255,8 @@ test("fails when MCP and sandbox incident identities disagree", () => {
               suspected_component: "nightly-worker",
             },
             root_cause_candidate: "nightly-worker",
+            root_cause_explanation:
+              "Deployment 4c21 increased nightly-worker concurrency to 32 while the analytics database pool remained at 20 connections, causing database connection exhaustion and the observed worker failures.",
           }),
         },
       },
