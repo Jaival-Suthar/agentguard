@@ -172,23 +172,23 @@ for fragment in required_log_fragments:
         )
 
 
-# The root cause is derived ONLY after all diagnostic
-# evidence above has passed validation.
-
-root_cause = (
-    "Deployment 4c21 increased nightly-worker concurrency "
-    "to 32 while the analytics database pool remained at "
-    "20 connections, causing database connection exhaustion "
-    "and the observed worker failures."
-)
-
-
 analysis = {
-    "incident_id": incident["incident_id"],
-    "service": incident["service"],
-    "component": incident["suspected_component"],
+    "incident": {
+        "incident_id": incident["incident_id"],
+        "service": incident["service"],
+        "severity": incident["severity"],
+        "status": incident["status"],
+        "suspected_component": incident["suspected_component"],
+    },
 
-    "root_cause_candidate": root_cause,
+    "root_cause_candidate": incident["suspected_component"],
+
+    "root_cause_explanation": (
+        "Deployment 4c21 increased nightly-worker concurrency "
+        "to 32 while the analytics database pool remained at "
+        "20 connections, causing database connection exhaustion "
+        "and the observed worker failures."
+    ),
 
     "evidence_checks": {
         "deployment": "verified",

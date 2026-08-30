@@ -17,7 +17,7 @@ import type {
   PolicyGateOptions,
 } from "../../src/policy/index.js";
 
-const HOST = process.env.HOST ?? "127.0.0.1";
+const HOST = process.env.HOST ?? "0.0.0.0";
 const PORT = Number(process.env.PORT ?? "8782");
 
 const CONTRACT_PATH = fileURLToPath(
